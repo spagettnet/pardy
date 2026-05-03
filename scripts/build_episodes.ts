@@ -179,25 +179,51 @@ async function loadRows(): Promise<EpisodeAccum[]> {
   }));
 }
 
-function tierForValue(value: number, round: number): number | null {
-  // Modern era: r1 = 200/400/600/800/1000; r2 = 400/800/1200/1600/2000.
-  // Pre-Nov-2001: r1 = 100/200/300/400/500; r2 = 200/400/600/800/1000.
-  // Map any of these to tier 0..4.
-  const tiers =
-    round === 1
-      ? [
-          [100, 200, 300, 400, 500],
-          [200, 400, 600, 800, 1000],
-        ]
-      : [
-          [200, 400, 600, 800, 1000],
-          [400, 800, 1200, 1600, 2000],
-        ];
-  for (const set of tiers) {
-    const idx = set.indexOf(value);
-    if (idx >= 0) return idx;
+// Pre-Nov-2001:  r1 = 100/200/300/400/500;  r2 = 200/400/600/800/1000
+// Modern (Nov 26, 2001+):  r1 = 200/400/600/800/1000;  r2 = 400/800/1200/1600/2000
+const VALUE_SETS = {
+  modern: {
+    1: [200, 400, 600, 800, 1000],
+    2: [400, 800, 1200, 1600, 2000],
+  },
+  pre2001: {
+    1: [100, 200, 300, 400, 500],
+    2: [200, 400, 600, 800, 1000],
+  },
+} as const;
+
+/**
+ * Decide whether the round uses modern or pre-2001 value scaling.
+ * Picks whichever set is a strict superset of the values that actually
+ * appear in this round. Modern $200 vs pre-2001 $200 are ambiguous, but
+ * modern $1000 / pre-2001 $500 (round 1) and modern $2000 / pre-2001 $1000
+ * (round 2) are not — so the decision is unambiguous as soon as the
+ * round has more than one distinct value.
+ */
+function detectEra(roundNum: 1 | 2, values: Set<number>): "modern" | "pre2001" {
+  const modern = new Set(VALUE_SETS.modern[roundNum]);
+  const pre = new Set(VALUE_SETS.pre2001[roundNum]);
+  let modernFits = true;
+  let preFits = true;
+  for (const v of values) {
+    if (!modern.has(v)) modernFits = false;
+    if (!pre.has(v)) preFits = false;
   }
-  return null;
+  // If both fit (e.g. all values ∈ {200, 400, 600, 800, 1000} for round 2 pre-2001),
+  // prefer modern — way more episodes are modern era.
+  if (modernFits) return "modern";
+  if (preFits) return "pre2001";
+  // Mixed weirdness — default to modern; buildRound will then drop unfit values.
+  return "modern";
+}
+
+function tierForValue(
+  value: number,
+  roundNum: 1 | 2,
+  era: "modern" | "pre2001",
+): number | null {
+  const idx = VALUE_SETS[era][roundNum].indexOf(value);
+  return idx >= 0 ? idx : null;
 }
 
 function buildEpisode(accum: EpisodeAccum): GameDef | null {
@@ -213,6 +239,11 @@ function buildEpisode(accum: EpisodeAccum): GameDef | null {
     rRows: RawRow[],
     roundNum: 1 | 2,
   ): { categories: Category[] } | null => {
+    // First pass: detect era from values present in this round.
+    const valueSet = new Set<number>();
+    for (const r of rRows) valueSet.add(r.clueValue);
+    const era = detectEra(roundNum, valueSet);
+
     const byCat = new Map<string, RawRow[]>();
     for (const row of rRows) {
       const list = byCat.get(row.category);
@@ -220,19 +251,16 @@ function buildEpisode(accum: EpisodeAccum): GameDef | null {
       else byCat.set(row.category, [row]);
     }
     const cats: Category[] = [];
+    // Always normalize to modern values in the GameDef (the UI shows $200/$1000
+    // / $2000), but use the era's tier ordering to slot clues correctly.
+    const standardValues = VALUE_SETS.modern[roundNum];
     for (const [title, list] of byCat) {
-      // Allow up to 5 clues per cat. We'll back-fill missing slots with
-      // a "[skipped on air]" placeholder so the episode is still playable.
       if (list.length === 0 || list.length > 5) return null;
       const slots: (Clue | null)[] = [null, null, null, null, null];
-      const standardValues =
-        roundNum === 1
-          ? [200, 400, 600, 800, 1000]
-          : [400, 800, 1200, 1600, 2000];
       for (const r of list) {
-        const tier = tierForValue(r.clueValue, roundNum);
+        const tier = tierForValue(r.clueValue, roundNum, era);
         if (tier === null) return null;
-        if (slots[tier] !== null) return null; // duplicate value: bail
+        if (slots[tier] !== null) return null;
         slots[tier] = {
           value: standardValues[tier]!,
           prompt: r.prompt,
@@ -240,7 +268,6 @@ function buildEpisode(accum: EpisodeAccum): GameDef | null {
           dailyDouble: r.ddValue > 0 ? true : undefined,
         };
       }
-      // Fill any null slots with placeholder.
       for (let i = 0; i < 5; i++) {
         if (slots[i] === null) {
           slots[i] = {
