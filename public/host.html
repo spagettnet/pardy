@@ -61,6 +61,7 @@
                   <div id="ep-search-filters">
                     <select id="ep-tier-select">
                       <option value="">any tier</option>
+                      <option value="custom">Saved Custom</option>
                       <option value="regular">Regular</option>
                       <option value="kids">Kids Week</option>
                       <option value="teen">Teen Tournament</option>
@@ -109,12 +110,16 @@
 
         <section id="building-screen" class="screen" hidden>
           <div class="big-card">
-            <div class="big-card-kicker">Building Custom Board</div>
+            <div class="big-card-kicker" id="building-phase">Building Custom Board</div>
             <div class="big-card-title">Opus 4.7 is researching…</div>
-            <div class="big-card-sub" id="building-progress">
-              Crafting categories tuned to your players. This usually takes 30–90 seconds.
+            <div class="big-card-sub" id="building-detail">
+              Crafting categories tuned to your players.
             </div>
-            <div class="spinner-large"></div>
+            <div id="building-progress-bar" class="building-bar" hidden>
+              <div id="building-progress-fill"></div>
+              <div id="building-progress-label">0 / 0</div>
+            </div>
+            <ul id="building-events"></ul>
             <button data-action="cancelInterview" class="ghost-btn">Cancel</button>
           </div>
         </section>

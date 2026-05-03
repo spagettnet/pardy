@@ -10,6 +10,9 @@ data/raw/
 data/episodes.json
 data/categories.json
 
+# User-generated saved custom boards — local only
+data/custom-boards/
+
 # Self-signed TLS cert — regenerated via pnpm cert
 certs/
 

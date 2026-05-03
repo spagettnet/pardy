@@ -81,8 +81,41 @@ function handleServerMessage(msg) {
     case "error":
       toast(msg.message);
       break;
+    case "boardProgress":
+      handleBoardProgress(msg);
+      break;
     default:
       break;
+  }
+}
+
+function handleBoardProgress(msg) {
+  const phaseEl = $("building-phase");
+  const detailEl = $("building-detail");
+  if (phaseEl && msg.phase) phaseEl.textContent = msg.phase;
+  if (detailEl) detailEl.textContent = msg.detail || "";
+
+  const bar = $("building-progress-bar");
+  if (typeof msg.total === "number" && msg.total > 0) {
+    const pct = Math.round(((msg.done || 0) / msg.total) * 100);
+    $("building-progress-fill").style.width = pct + "%";
+    $("building-progress-label").textContent = `${msg.done ?? 0} / ${msg.total}`;
+    bar.hidden = false;
+  } else if (msg.phase && msg.phase.startsWith("Done")) {
+    $("building-progress-fill").style.width = "100%";
+  } else {
+    bar.hidden = true;
+  }
+
+  // Stream events into the rolling list
+  const list = $("building-events");
+  if (list && msg.detail) {
+    const li = document.createElement("li");
+    if (msg.detail.startsWith("✓")) li.className = "ok";
+    if (msg.detail.startsWith("✗")) li.className = "err";
+    li.textContent = msg.detail;
+    list.insertBefore(li, list.firstChild);
+    while (list.children.length > 30) list.removeChild(list.lastChild);
   }
 }
 
@@ -148,8 +181,9 @@ const TIER_LABELS = {
   college: "College Champ.",
   celebrity: "Celebrity",
   tournament: "Tournament",
+  custom: "Saved Custom",
 };
-const TIER_ORDER = ["kids", "teen", "celebrity", "college", "tournament", "regular"];
+const TIER_ORDER = ["custom", "kids", "teen", "celebrity", "college", "tournament", "regular"];
 
 function renderTierPicker() {
   if (!info || !info.tiers) return;

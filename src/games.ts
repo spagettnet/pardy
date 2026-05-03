@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
   Category,
@@ -12,6 +12,7 @@ const ROOT = resolve(import.meta.dirname, "..");
 const EPISODES_PATH = resolve(ROOT, "data/episodes.json");
 const CATEGORIES_PATH = resolve(ROOT, "data/categories.json");
 const SAMPLE_PATH = resolve(ROOT, "data/sample-game.json");
+const CUSTOM_BOARDS_DIR = resolve(ROOT, "data/custom-boards");
 
 interface EpisodeRecord extends GameDef {
   airDate: string;
@@ -29,12 +30,43 @@ let _pool: CategoryPool | null = null;
 
 function loadEpisodes(): EpisodeRecord[] {
   if (_episodes) return _episodes;
-  if (!existsSync(EPISODES_PATH)) {
-    _episodes = [];
-    return _episodes;
+  const out: EpisodeRecord[] = [];
+  if (existsSync(EPISODES_PATH)) {
+    const eps = JSON.parse(readFileSync(EPISODES_PATH, "utf8")) as EpisodeRecord[];
+    for (const e of eps) out.push(e);
   }
-  _episodes = JSON.parse(readFileSync(EPISODES_PATH, "utf8"));
-  return _episodes!;
+  // Append any saved custom boards as a "custom" tier so they show up
+  // in the lobby picker for replay.
+  if (existsSync(CUSTOM_BOARDS_DIR)) {
+    try {
+      const files = readdirSync(CUSTOM_BOARDS_DIR).filter((f) => f.endsWith(".json"));
+      for (const f of files) {
+        try {
+          const raw = readFileSync(resolve(CUSTOM_BOARDS_DIR, f), "utf8");
+          const def = JSON.parse(raw) as GameDef & {
+            builtAt?: string;
+            players?: string[];
+          };
+          // Air-date-ish: derive from filename prefix, keep ISO-y for sorting.
+          const m = f.match(/^(\d{4})-(\d{2})-(\d{2})/);
+          const airDate = m ? `${m[1]}-${m[2]}-${m[3]}` : (def.builtAt?.slice(0, 10) ?? "custom");
+          out.push({
+            ...def,
+            airDate,
+            tier: "custom" as GameTier,
+          });
+        } catch {
+          // skip malformed file
+        }
+      }
+    } catch {}
+  }
+  _episodes = out;
+  return _episodes;
+}
+
+export function invalidateEpisodeCache(): void {
+  _episodes = null;
 }
 
 function loadPool(): CategoryPool | null {
@@ -158,6 +190,7 @@ export function listEpisodesByTier(): Record<GameTier, number> {
     college: 0,
     celebrity: 0,
     tournament: 0,
+    custom: 0,
   };
   for (const ep of loadEpisodes()) {
     if (ep.tier) counts[ep.tier] = (counts[ep.tier] || 0) + 1;

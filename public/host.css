@@ -457,6 +457,69 @@ body {
   }
 }
 
+.building-bar {
+  position: relative;
+  width: min(80%, 600px);
+  height: 28px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid var(--gold);
+  border-radius: 999px;
+  margin: 24px auto 12px;
+  overflow: hidden;
+}
+
+#building-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #f5b53b, #ffce5e);
+  transition: width 0.3s ease;
+}
+
+#building-progress-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--white);
+  text-shadow: 1px 1px 0 #000;
+}
+
+#building-events {
+  list-style: none;
+  margin: 12px auto 16px;
+  padding: 0;
+  width: min(80%, 600px);
+  max-height: 220px;
+  overflow-y: auto;
+  text-align: left;
+  font-size: 14px;
+  font-family: var(--sans);
+}
+
+#building-events li {
+  padding: 6px 12px;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.85);
+  animation: fadein 0.4s ease;
+}
+
+#building-events li.ok {
+  color: #2ecc71;
+}
+
+#building-events li.err {
+  color: var(--red);
+}
+
+@keyframes fadein {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 #lobby-players {
   list-style: none;
   margin: 0;

@@ -23,6 +23,7 @@ import {
   listEpisodes,
   listEpisodesByTier,
   searchEpisodes,
+  invalidateEpisodeCache,
 } from "./games.js";
 import type { GameTier } from "./types.js";
 import type {
@@ -235,9 +236,28 @@ async function runBoardBuild(): Promise<void> {
   try {
     console.log(`[board] building custom board for ${profiles.length} player(s) with Opus 4.7…`);
     const startedAt = Date.now();
-    const def = await buildCustomBoard(profiles);
+    const def = await buildCustomBoard(profiles, {
+      onProgress: (p) => {
+        sendToHosts({
+          type: "boardProgress",
+          phase: p.phase,
+          detail: p.detail,
+          done: p.done,
+          total: p.total,
+        });
+      },
+    });
     const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
     console.log(`[board] built "${def.title}" in ${elapsed}s`);
+    sendToHosts({
+      type: "boardProgress",
+      phase: `Done in ${elapsed}s`,
+      detail: def.title,
+    });
+    // Persist for replay.
+    void persistCustomBoard(def, profiles).catch((err) =>
+      console.error("[board] persist failed:", err),
+    );
     world.def = def;
     dispatch({ type: "boardBuildCompleted" });
   } catch (err) {
@@ -248,6 +268,32 @@ async function runBoardBuild(): Promise<void> {
     });
     dispatch({ type: "boardBuildFailed", reason: (err as Error).message });
   }
+}
+
+async function persistCustomBoard(
+  def: GameDef,
+  profiles: PlayerProfile[],
+): Promise<void> {
+  const dir = resolve(import.meta.dirname, "..", "data", "custom-boards");
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(dir, { recursive: true });
+  const slug = def.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const filename = `${stamp}__${slug || "untitled"}.json`;
+  const path = resolve(dir, filename);
+  const payload = {
+    ...def,
+    builtAt: new Date().toISOString(),
+    players: profiles.map((p) => p.name),
+  };
+  await fs.writeFile(path, JSON.stringify(payload, null, 2));
+  console.log(`[board] saved → data/custom-boards/${filename}`);
+  // Invalidate so the new board appears in the picker without restart.
+  invalidateEpisodeCache();
 }
 
 async function speakAndAnnounce(tag: TtsTag, text: string): Promise<void> {

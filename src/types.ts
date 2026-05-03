@@ -25,7 +25,8 @@ export type GameTier =
   | "teen"
   | "college"
   | "celebrity"
-  | "tournament";
+  | "tournament"
+  | "custom";
 
 export interface Clue {
   value: number;
@@ -199,7 +200,8 @@ export type ServerMessage =
   | { type: "judging" }
   | { type: "error"; message: string }
   | { type: "youBuzzed" } // sent to buzzed player; phone should start recording
-  | { type: "kicked"; reason: string };
+  | { type: "kicked"; reason: string }
+  | { type: "boardProgress"; phase: string; detail?: string; done?: number; total?: number };
 
 export type TtsTag =
   | "intro"
