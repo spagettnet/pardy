@@ -5,6 +5,8 @@ A speech-to-text model listens to the buzzed-in player's spoken answer and a
 small Anthropic model judges whether it's correct, so **nobody at the party has
 to know the answers in advance**.
 
+![host: pick → clue → answer reveal](docs/screenshots/host-cycle.gif)
+
 ```
 laptop  ──TTS──►  speakers (reads the clue)
 phone   ──BUZZ──► laptop (state machine picks first valid press)
@@ -15,6 +17,34 @@ laptop  ◄──QR───  phones join http://<lan-ip>:3030/buzzer
 All voice services run locally — no cloud-side STT/TTS. The repo is
 self-contained: vendored Python TTS (Kokoro ONNX) and STT (faster-whisper)
 boot alongside the Node game server.
+
+## What it looks like
+
+### Lobby
+
+The host display shows a QR code; phones land on `/buzzer` and join with a name. An "Episode" panel lets you pick a real-show tier (Kids Week / Teen / Celeb / Tournament / Regular), shuffle clues across all tiers (Mix & Match), or fire up the **custom-board** flow.
+
+| Host (laptop) | Phone (player) |
+|:---:|:---:|
+| ![](docs/screenshots/host-lobby.png) | ![](docs/screenshots/phone-join.png) |
+
+### Gameplay
+
+Real Jeopardy! board, real clues from the J! Archive. Greyed `—` cells are clues that were skipped on the original air date.
+
+![board](docs/screenshots/host-board.png)
+
+When a clue is picked, TTS reads it aloud. Phones get a giant BUZZ button. The first valid press wins the floor; that phone auto-records, faster-whisper transcribes, and Haiku judges. Wrong answers get a value penalty and the buzz window reopens to the rest. Auto-advances when the judgement is read aloud.
+
+| Reading the clue | Phone: BUZZ | Phone: answering |
+|:---:|:---:|:---:|
+| ![](docs/screenshots/host-clue.png) | ![](docs/screenshots/phone-buzz.png) | ![](docs/screenshots/phone-answering.png) |
+
+### Custom board (Opus 4.7 + web search)
+
+Each player records ~60s on what they're good at. Opus 4.7 takes the transcripts, does live web search via OpenRouter's `:online` (or Anthropic's `web_search_20260209` if you have a direct key), and emits a tailored 6×5 + 6×5 + Final board with categories aimed at each player's strengths and weaknesses.
+
+![](docs/screenshots/host-building.png)
 
 ## Stack
 
