@@ -1,0 +1,629 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+:root {
+  --bg: #0b0b3b;
+  --bg-2: #14146b;
+  --gold: #f5b53b;
+  --red: #d33;
+  --red-press: #a02020;
+  --green: #3cba54;
+  --text: #ffffff;
+  --muted: rgba(255, 255, 255, 0.65);
+  --dim: rgba(255, 255, 255, 0.18);
+  --neg: #ff6b6b;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body {
+  min-height: 100dvh;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Topbar */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px 6px 16px;
+  font-size: 14px;
+  flex: 0 0 auto;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.my-name {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50vw;
+}
+
+.change-name {
+  color: var(--muted);
+  text-decoration: underline;
+  font-size: 12px;
+}
+
+.change-name:hover {
+  color: var(--text);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.my-score {
+  font-family: "Bowlby One SC", "Inter", sans-serif;
+  color: var(--gold);
+  font-size: 22px;
+  letter-spacing: 0.04em;
+}
+
+.my-score.negative {
+  color: var(--neg);
+}
+
+.conn-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #888;
+  box-shadow: 0 0 6px #000 inset;
+  transition: background 0.2s ease;
+}
+
+.conn-dot.connected {
+  background: var(--green);
+}
+
+.conn-dot.disconnected {
+  background: #c33;
+}
+
+/* Main */
+.main {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  min-height: 0;
+  padding: 8px 16px 16px 16px;
+}
+
+.screen {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  width: 100%;
+  min-height: 0;
+}
+
+/* Join */
+.join-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 360px;
+  gap: 16px;
+}
+
+.logo {
+  font-family: "Bowlby One SC", "Inter", sans-serif;
+  font-size: 56px;
+  color: var(--gold);
+  letter-spacing: 0.06em;
+  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.4);
+}
+
+.subtitle {
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.name-input {
+  width: 100%;
+  font-size: 22px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 2px solid var(--dim);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  text-align: center;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.name-input:focus {
+  border-color: var(--gold);
+}
+
+.primary-btn {
+  width: 100%;
+  font-size: 20px;
+  font-weight: 700;
+  padding: 16px;
+  border-radius: 12px;
+  border: 0;
+  background: var(--gold);
+  color: #1a1a1a;
+  cursor: pointer;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  touch-action: manipulation;
+  transition: transform 0.06s ease, filter 0.15s ease;
+}
+
+.primary-btn:active {
+  transform: scale(0.98);
+  filter: brightness(0.92);
+}
+
+.primary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ghost-btn {
+  font-size: 16px;
+  font-weight: 600;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--dim);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.join-error {
+  color: var(--neg);
+  font-size: 14px;
+  min-height: 18px;
+}
+
+/* Common message */
+.big-msg {
+  font-family: "Bowlby One SC", "Inter", sans-serif;
+  font-size: clamp(28px, 7vw, 44px);
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  margin-bottom: 10px;
+  padding: 0 8px;
+}
+
+.sub-msg {
+  color: var(--muted);
+  font-size: 18px;
+  margin-bottom: 14px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  padding: 10px;
+}
+
+.chip {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chip.me {
+  background: var(--gold);
+  color: #1a1a1a;
+}
+
+.chip.dim {
+  opacity: 0.5;
+}
+
+.chip-check {
+  color: var(--green);
+}
+
+/* Reading locked buzz */
+.locked-buzz {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.locked-circle {
+  width: min(70vw, 320px);
+  height: min(70vw, 320px);
+  border-radius: 50%;
+  background: rgba(211, 51, 51, 0.25);
+  border: 4px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Bowlby One SC", "Inter", sans-serif;
+  font-size: clamp(48px, 14vw, 96px);
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.04em;
+}
+
+/* Buzz button */
+#screen-open {
+  justify-content: center;
+  gap: 16px;
+}
+
+.buzz-btn {
+  width: min(85vw, 460px);
+  height: min(85vw, 460px);
+  max-height: 70dvh;
+  border-radius: 50%;
+  border: none;
+  background: radial-gradient(circle at 30% 25%, #ff5050, var(--red) 60%, #8b1a1a);
+  color: #fff;
+  font-family: "Bowlby One SC", "Inter", sans-serif;
+  cursor: pointer;
+  box-shadow:
+    0 14px 0 #5b0e0e,
+    0 24px 50px rgba(0, 0, 0, 0.55),
+    inset 0 -10px 18px rgba(0, 0, 0, 0.3),
+    inset 0 6px 14px rgba(255, 255, 255, 0.25);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.07s ease, box-shadow 0.07s ease, filter 0.15s ease;
+  font-family: inherit;
+}
+
+.buzz-text {
+  font-family: "Bowlby One SC", "Inter", sans-serif;
+  font-size: clamp(56px, 18vw, 140px);
+  letter-spacing: 0.06em;
+  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.45);
+}
+
+.buzz-btn:active,
+.buzz-btn.pressed {
+  transform: translateY(6px) scale(0.98);
+  box-shadow:
+    0 6px 0 #5b0e0e,
+    0 10px 22px rgba(0, 0, 0, 0.45),
+    inset 0 -6px 14px rgba(0, 0, 0, 0.3),
+    inset 0 4px 10px rgba(255, 255, 255, 0.2);
+  filter: brightness(0.95);
+}
+
+.buzz-btn.locked {
+  background: #4a4a55;
+  box-shadow:
+    0 8px 0 #2a2a30,
+    inset 0 -6px 14px rgba(0, 0, 0, 0.3);
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+  pointer-events: none;
+}
+
+.buzz-btn.buzzed {
+  background: #2a3b6b;
+  box-shadow:
+    0 8px 0 #15234a,
+    inset 0 -6px 14px rgba(0, 0, 0, 0.3);
+}
+
+/* Answering */
+.answering-self {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: 16px;
+}
+
+.pulse-wrap {
+  position: relative;
+  width: min(60vw, 280px);
+  height: min(60vw, 280px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 16px 0;
+}
+
+.pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(211, 51, 51, 0.45);
+  animation: pulse 1.4s ease-out infinite;
+}
+
+.pulse-2 {
+  animation-delay: 0.7s;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.3);
+    opacity: 0;
+  }
+}
+
+.mic-dot {
+  position: relative;
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 30px rgba(211, 51, 51, 0.7);
+}
+
+.mic-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--neg);
+}
+
+/* Spinner */
+.spinner {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 4px solid rgba(255, 255, 255, 0.15);
+  border-top-color: var(--gold);
+  animation: spin 0.9s linear infinite;
+  margin-top: 16px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Resolved */
+.resolved-msg {
+  font-family: "Bowlby One SC", "Inter", sans-serif;
+  font-size: clamp(40px, 11vw, 84px);
+}
+
+.resolved-msg.correct {
+  color: var(--green);
+}
+
+.resolved-msg.wrong {
+  color: var(--neg);
+}
+
+.resolved-answer {
+  margin-top: 16px;
+  font-size: 22px;
+  color: var(--muted);
+  padding: 0 12px;
+}
+
+/* Wager */
+.wager-input {
+  width: 100%;
+  max-width: 320px;
+  font-size: 36px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  border: 2px solid var(--dim);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--gold);
+  text-align: center;
+  font-family: "Bowlby One SC", "Inter", sans-serif;
+  outline: none;
+  margin-bottom: 8px;
+}
+
+.wager-input:focus {
+  border-color: var(--gold);
+}
+
+#screen-ddwager #ddPickerView,
+#screen-finalwager #finalWagerActive {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 380px;
+  gap: 10px;
+}
+
+#screen-finalwager #finalWagerWaiting,
+#screen-finalwager #finalWagerSpectator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+}
+
+.final-category {
+  font-family: "Bowlby One SC", "Inter", sans-serif;
+  color: var(--gold);
+  font-size: clamp(20px, 5vw, 28px);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 8px 0 14px 0;
+  padding: 0 12px;
+}
+
+/* Final reveal */
+.final-reveal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.final-reveal .name {
+  font-weight: 700;
+  font-size: 20px;
+}
+
+.final-reveal .transcript {
+  font-style: italic;
+  color: var(--muted);
+}
+
+.final-reveal .verdict.correct {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.final-reveal .verdict.wrong {
+  color: var(--neg);
+  font-weight: 700;
+}
+
+.final-reveal .wager {
+  color: var(--gold);
+  font-family: "Bowlby One SC", "Inter", sans-serif;
+}
+
+/* Game over */
+.winner {
+  font-family: "Bowlby One SC", "Inter", sans-serif;
+  color: var(--gold);
+  font-size: clamp(28px, 7vw, 42px);
+  margin: 8px 0 16px 0;
+}
+
+.scoreboard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 360px;
+  margin-top: 8px;
+}
+
+.scoreboard-row {
+  display: flex;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.scoreboard-row .sb-score {
+  font-family: "Bowlby One SC", "Inter", sans-serif;
+  color: var(--gold);
+}
+
+.scoreboard-row .sb-score.negative {
+  color: var(--neg);
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(20px + var(--safe-bottom));
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-size: 14px;
+  z-index: 9999;
+  max-width: 86vw;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: toast-in 0.18s ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}

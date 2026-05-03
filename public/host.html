@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Pardy — Host</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bowlby+One+SC&family=Inter:wght@400;600;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/host.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <div id="game-title">Pardy</div>
+        <div id="round-indicator"></div>
+        <div id="topbar-controls">
+          <button id="start-btn" hidden>Start Game</button>
+          <details id="debug-menu">
+            <summary>Menu</summary>
+            <div class="debug-actions">
+              <button id="restart-btn">Restart Game</button>
+              <button id="new-game-btn">New Game (reload episode)</button>
+              <button id="end-game-btn">End Game</button>
+            </div>
+          </details>
+        </div>
+      </header>
+
+      <main id="main">
+        <section id="lobby" class="screen" hidden>
+          <div id="lobby-left">
+            <h2>Scan to join</h2>
+            <img id="qr" src="/qr" alt="Join QR code" />
+            <div id="join-url"></div>
+          </div>
+          <div id="lobby-right">
+            <h3>Players</h3>
+            <ul id="lobby-players"></ul>
+            <div id="tier-picker">
+              <h3>Episode</h3>
+              <div class="tier-current" id="tier-current"></div>
+              <div class="tier-grid" id="tier-grid"></div>
+              <div class="tier-mix">
+                <button id="tier-mix-btn" class="tier-btn">Mix &amp; Match (random clues)</button>
+                <button id="tier-reroll-btn" class="tier-btn">Re-roll same tier</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="board-screen" class="screen" hidden>
+          <div id="picker-banner"></div>
+          <div id="board"></div>
+          <div id="clue-overlay" hidden>
+            <div id="clue-card">
+              <div id="clue-value"></div>
+              <div id="clue-dd-splash" hidden>DAILY DOUBLE</div>
+              <div id="clue-prompt"></div>
+              <div id="clue-answer" hidden></div>
+              <div id="clue-progress"><div id="clue-progress-bar"></div></div>
+              <div id="judging-pill" hidden>JUDGING…</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="dd-wager-screen" class="screen" hidden>
+          <div class="big-card">
+            <div class="big-card-title">DAILY DOUBLE</div>
+            <div id="dd-wager-text"></div>
+          </div>
+        </section>
+
+        <section id="round-break-screen" class="screen" hidden>
+          <div class="big-card">
+            <div class="big-card-title">End of Round 1</div>
+            <div class="big-card-sub">Double Jeopardy is next</div>
+            <button class="advance-btn" data-action="advance">Continue</button>
+          </div>
+        </section>
+
+        <section id="final-wager-screen" class="screen" hidden>
+          <div class="big-card">
+            <div class="big-card-kicker">Final Jeopardy — Category</div>
+            <div id="final-category" class="big-card-title"></div>
+            <ul id="final-wager-list"></ul>
+          </div>
+        </section>
+
+        <section id="final-prompt-screen" class="screen" hidden>
+          <div class="big-card">
+            <div class="big-card-kicker">Final Jeopardy</div>
+            <div id="final-category-2" class="big-card-sub"></div>
+            <div id="final-prompt" class="big-card-prompt"></div>
+            <div id="final-answering-text" hidden>
+              Players, record your responses now.
+            </div>
+            <div id="final-progress" hidden><div id="final-progress-bar"></div></div>
+          </div>
+        </section>
+
+        <section id="final-reveal-screen" class="screen" hidden>
+          <div class="big-card">
+            <div class="big-card-kicker">Final Jeopardy</div>
+            <div id="reveal-name" class="big-card-title"></div>
+            <div id="reveal-transcript" class="big-card-prompt"></div>
+            <div id="reveal-result"></div>
+            <div id="reveal-wager"></div>
+            <div id="reveal-correct"></div>
+            <button class="advance-btn" data-action="revealNext">Reveal next</button>
+          </div>
+        </section>
+
+        <section id="game-over-screen" class="screen" hidden>
+          <div class="big-card">
+            <div class="big-card-kicker">Game Over</div>
+            <div id="winner-banner" class="big-card-title"></div>
+            <ol id="final-scoreboard"></ol>
+          </div>
+        </section>
+      </main>
+
+      <footer id="scoreboard"></footer>
+
+      <div id="resolved-controls" hidden>
+        <button data-action="overrideCorrect">Override → Correct</button>
+        <button data-action="overrideIncorrect">Override → Incorrect</button>
+        <button data-action="advance" class="advance-btn">Continue</button>
+      </div>
+
+      <div id="open-controls" hidden>
+        <button data-action="pass">Skip / Reveal Answer</button>
+      </div>
+
+      <div id="toast" hidden></div>
+    </div>
+
+    <audio id="tts" preload="auto"></audio>
+
+    <script type="module" src="/host.js"></script>
+  </body>
+</html>

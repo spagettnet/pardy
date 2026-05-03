@@ -1,0 +1,246 @@
+import Anthropic from "@anthropic-ai/sdk";
+
+const MODEL = process.env.JUDGE_MODEL || "claude-haiku-4-5-20251001";
+
+const client = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+export interface JudgeInput {
+  category: string;
+  prompt: string;
+  correctAnswer: string;
+  transcribedGuess: string;
+  isFinal?: boolean;
+}
+
+export interface JudgeResult {
+  correct: boolean;
+  reason: string;
+  riff: string | null; // playful one-liner, optional
+}
+
+const SYSTEM = `You are an impartial Jeopardy! judge.
+
+Given the clue, the canonical correct response, and a player's spoken guess (transcribed from speech-to-text, so expect mishearings), decide whether the guess should be accepted.
+
+Acceptance rules — match TV show practice:
+- Accept any correct response that unambiguously identifies the right answer.
+- Be lenient on phrasing, articles, capitalization, partial names, common nicknames, and minor STT misspellings (e.g. "the godfather" == "godfather", "ada lovelace" == "lovelace" if the clue clearly cues her).
+- Do NOT require "in the form of a question." Accept either form.
+- Reject if the guess names a different specific entity.
+- If the guess is empty, just filler, "I don't know", or unrelated, reject.
+
+Style for "riff": one short playful sentence in the spirit of a host. Tease gently on a wrong answer; congratulate briefly on a right answer. Keep it under 12 words. Use null if nothing clever comes to mind. Never reveal the correct answer in the riff if the guess was wrong.
+
+Respond ONLY with the judgement tool call.`;
+
+export async function judgeAnswer(input: JudgeInput): Promise<JudgeResult> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    // Fallback: dumb string match so dev works without a key.
+    const norm = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/[^a-z0-9 ]/g, " ")
+        .replace(/\b(the|a|an|of)\b/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    const a = norm(input.correctAnswer);
+    const b = norm(input.transcribedGuess);
+    const correct = !!a && !!b && (b.includes(a) || a.includes(b));
+    return {
+      correct,
+      reason: "fallback string match (no ANTHROPIC_API_KEY set)",
+      riff: null,
+    };
+  }
+
+  const userBlock = `Clue category: ${input.category}
+Clue prompt: ${input.prompt}
+Canonical correct response: ${input.correctAnswer}
+Player's transcribed guess: ${JSON.stringify(input.transcribedGuess)}
+${input.isFinal ? "(This is Final Jeopardy — be a touch stricter on identification but still tolerate STT noise.)" : ""}`;
+
+  const resp = await client.messages.create({
+    model: MODEL,
+    max_tokens: 300,
+    system: SYSTEM,
+    tool_choice: { type: "tool", name: "judgement" },
+    tools: [
+      {
+        name: "judgement",
+        description: "Return the ruling on a player's guess.",
+        input_schema: {
+          type: "object",
+          properties: {
+            correct: {
+              type: "boolean",
+              description: "True if the guess should be accepted.",
+            },
+            reason: {
+              type: "string",
+              description:
+                "Brief internal explanation of the ruling (1 sentence).",
+            },
+            riff: {
+              type: ["string", "null"],
+              description:
+                "Optional short host-style remark. Null if nothing fits. Must NOT reveal the correct answer when the guess is wrong.",
+            },
+          },
+          required: ["correct", "reason"],
+        },
+      },
+    ],
+    messages: [{ role: "user", content: userBlock }],
+  });
+
+  const tool = resp.content.find(
+    (c) => c.type === "tool_use" && c.name === "judgement",
+  );
+  if (!tool || tool.type !== "tool_use") {
+    return {
+      correct: false,
+      reason: "judge returned no tool call",
+      riff: null,
+    };
+  }
+  const args = tool.input as {
+    correct?: unknown;
+    reason?: unknown;
+    riff?: unknown;
+  };
+  return {
+    correct: !!args.correct,
+    reason: typeof args.reason === "string" ? args.reason : "",
+    riff: typeof args.riff === "string" && args.riff.trim() ? args.riff : null,
+  };
+}
+
+// === matchPick: map a spoken phrase like "Oscars 400" to a board cell ===
+
+export interface BoardCell {
+  cat: number; // 0..5
+  idx: number; // 0..4
+  category: string;
+  value: number;
+}
+
+export interface MatchPickResult {
+  cat: number | null;
+  idx: number | null;
+  reason: string;
+}
+
+const PICK_SYSTEM = `You map a Jeopardy contestant's spoken pick (transcribed from speech) to a specific board cell.
+
+You will receive:
+- The phrase the player said.
+- The list of currently-available cells, each with a (cat, idx, category title, dollar value).
+
+Pick the cell that best matches what they said. The player typically says a category name (or fragment) plus a dollar amount, e.g. "Oscars 400", "World History for $600", "let's try potpourri 800". Be lenient on STT noise (e.g. "oscar's" vs "oscars", "for" misheard, partial titles, plural mismatches).
+
+Strict rules:
+- Only choose from the provided available cells.
+- If no cell clearly matches, return cat=null, idx=null with a brief reason.
+- Prefer a cell where BOTH the category and the value match. If only one matches, only pick if the other is unambiguous (e.g. only one category is open at that value).
+
+Respond ONLY with the matchPick tool call.`;
+
+export async function matchPick(
+  transcript: string,
+  available: BoardCell[],
+): Promise<MatchPickResult> {
+  if (!transcript.trim() || available.length === 0) {
+    return { cat: null, idx: null, reason: "empty input" };
+  }
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return naiveMatch(transcript, available);
+  }
+
+  try {
+    const userBlock = `Player said: ${JSON.stringify(transcript)}
+
+Available cells:
+${available.map((c) => `- cat=${c.cat} idx=${c.idx}: "${c.category}" for $${c.value}`).join("\n")}`;
+
+    const resp = await client.messages.create({
+      model: MODEL,
+      max_tokens: 200,
+      system: PICK_SYSTEM,
+      tool_choice: { type: "tool", name: "matchPick" },
+      tools: [
+        {
+          name: "matchPick",
+          description: "Return the cell the player picked, or null if unclear.",
+          input_schema: {
+            type: "object",
+            properties: {
+              cat: {
+                type: ["integer", "null"],
+                description: "Category index (0..5) of the chosen cell, or null if no clear match.",
+              },
+              idx: {
+                type: ["integer", "null"],
+                description: "Row index (0..4) of the chosen cell, or null if no clear match.",
+              },
+              reason: {
+                type: "string",
+                description: "Short explanation of the choice (or why nothing matched).",
+              },
+            },
+            required: ["cat", "idx", "reason"],
+          },
+        },
+      ],
+      messages: [{ role: "user", content: userBlock }],
+    });
+
+    const tool = resp.content.find(
+      (c) => c.type === "tool_use" && c.name === "matchPick",
+    );
+    if (!tool || tool.type !== "tool_use") {
+      return naiveMatch(transcript, available);
+    }
+    const args = tool.input as { cat?: unknown; idx?: unknown; reason?: unknown };
+    const cat = typeof args.cat === "number" ? args.cat : null;
+    const idx = typeof args.idx === "number" ? args.idx : null;
+    const reason = typeof args.reason === "string" ? args.reason : "";
+    // Validate: must be one of the available cells.
+    if (cat !== null && idx !== null) {
+      const ok = available.some((c) => c.cat === cat && c.idx === idx);
+      if (!ok) return { cat: null, idx: null, reason: `model returned unavailable cell (${reason})` };
+    }
+    return { cat, idx, reason };
+  } catch (err) {
+    return naiveMatch(transcript, available);
+  }
+}
+
+function naiveMatch(transcript: string, available: BoardCell[]): MatchPickResult {
+  // Fallback: pull the dollar amount and a category fragment.
+  const t = transcript.toLowerCase();
+  const dollarMatch = t.match(/(\d{2,4})/);
+  const value = dollarMatch ? parseInt(dollarMatch[1]!, 10) : null;
+  const norm = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const tn = norm(t);
+
+  let best: { cat: number; idx: number; score: number } | null = null;
+  for (const c of available) {
+    const cn = norm(c.category);
+    let score = 0;
+    if (value !== null && c.value === value) score += 5;
+    // Token overlap on category title.
+    const tokens = cn.split(" ").filter((w) => w.length > 2);
+    for (const tok of tokens) {
+      if (tn.includes(tok)) score += 2;
+    }
+    if (score > 0 && (!best || score > best.score)) {
+      best = { cat: c.cat, idx: c.idx, score };
+    }
+  }
+  if (!best) return { cat: null, idx: null, reason: "no fallback match" };
+  return { cat: best.cat, idx: best.idx, reason: `naive match score=${best.score}` };
+}

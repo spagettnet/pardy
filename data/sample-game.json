@@ -1,0 +1,138 @@
+{
+  "title": "Pardy: The Party Game",
+  "rounds": [
+    {
+      "categories": [
+        {
+          "title": "Movie Quotes",
+          "clues": [
+            { "value": 200, "prompt": "This 1972 film told us we'd be made an offer we can't refuse.", "answer": "The Godfather" },
+            { "value": 400, "prompt": "Tom Hanks' character in this 1994 film said life is like a box of chocolates.", "answer": "Forrest Gump" },
+            { "value": 600, "prompt": "In this 1980 sequel, Darth Vader reveals he is Luke's father.", "answer": "The Empire Strikes Back" },
+            { "value": 800, "prompt": "In this 1999 film, Tyler Durden's first rule is that you do not talk about it.", "answer": "Fight Club", "dailyDouble": true },
+            { "value": 1000, "prompt": "Roy Batty's 'tears in rain' monologue closes this 1982 Ridley Scott film.", "answer": "Blade Runner" }
+          ]
+        },
+        {
+          "title": "World Capitals",
+          "clues": [
+            { "value": 200, "prompt": "Capital of France.", "answer": "Paris" },
+            { "value": 400, "prompt": "Capital of Australia (it's not Sydney).", "answer": "Canberra" },
+            { "value": 600, "prompt": "This South American capital sits at over 11,000 feet of elevation.", "answer": "La Paz" },
+            { "value": 800, "prompt": "This African capital, on the Bosphorus' continent, replaced Lagos in 1991.", "answer": "Abuja" },
+            { "value": 1000, "prompt": "The capital of Kazakhstan, renamed in 2019 and again in 2022.", "answer": "Astana" }
+          ]
+        },
+        {
+          "title": "Science!",
+          "clues": [
+            { "value": 200, "prompt": "The chemical symbol for gold.", "answer": "Au" },
+            { "value": 400, "prompt": "The closest star to Earth, other than the Sun.", "answer": "Proxima Centauri" },
+            { "value": 600, "prompt": "This force keeps you on the ground; Newton named it.", "answer": "Gravity" },
+            { "value": 800, "prompt": "Number of bones in the adult human body.", "answer": "206" },
+            { "value": 1000, "prompt": "This particle, discovered at CERN in 2012, is sometimes called the God Particle.", "answer": "The Higgs Boson" }
+          ]
+        },
+        {
+          "title": "Internet History",
+          "clues": [
+            { "value": 200, "prompt": "Founded in 2004 in a Harvard dorm.", "answer": "Facebook" },
+            { "value": 400, "prompt": "This site's iconic 2005 video was 'Me at the zoo'.", "answer": "YouTube" },
+            { "value": 600, "prompt": "The original 140-character limit lived here.", "answer": "Twitter" },
+            { "value": 800, "prompt": "Launched in 1995, it bills itself as 'the front page of the internet'.", "answer": "Reddit" },
+            { "value": 1000, "prompt": "This protocol, with version 1.1 from 1997, powers the Web.", "answer": "HTTP" }
+          ]
+        },
+        {
+          "title": "Food & Drink",
+          "clues": [
+            { "value": 200, "prompt": "This Italian dish is a flatbread topped with tomato and cheese.", "answer": "Pizza" },
+            { "value": 400, "prompt": "The main ingredient in guacamole.", "answer": "Avocado" },
+            { "value": 600, "prompt": "This Japanese rice wine is brewed, not distilled.", "answer": "Sake" },
+            { "value": 800, "prompt": "Mexican spirit distilled from blue agave, primarily in Jalisco.", "answer": "Tequila" },
+            { "value": 1000, "prompt": "This French cooking technique means 'sealed under vacuum' and uses a water bath.", "answer": "Sous-vide" }
+          ]
+        },
+        {
+          "title": "Anything Goes",
+          "clues": [
+            { "value": 200, "prompt": "Number of strings on a standard guitar.", "answer": "Six" },
+            { "value": 400, "prompt": "The largest planet in our solar system.", "answer": "Jupiter" },
+            { "value": 600, "prompt": "This board game features property like Boardwalk and Park Place.", "answer": "Monopoly" },
+            { "value": 800, "prompt": "Author of '1984' and 'Animal Farm'.", "answer": "George Orwell" },
+            { "value": 1000, "prompt": "The atomic number of carbon.", "answer": "Six" }
+          ]
+        }
+      ]
+    },
+    {
+      "categories": [
+        {
+          "title": "Tech CEOs",
+          "clues": [
+            { "value": 400, "prompt": "He co-founded Apple alongside Steve Jobs.", "answer": "Steve Wozniak" },
+            { "value": 800, "prompt": "Microsoft CEO since 2014.", "answer": "Satya Nadella" },
+            { "value": 1200, "prompt": "He founded Amazon in 1994.", "answer": "Jeff Bezos" },
+            { "value": 1600, "prompt": "Co-founder and current CEO of Nvidia.", "answer": "Jensen Huang", "dailyDouble": true },
+            { "value": 2000, "prompt": "Co-founder of Anthropic and former OpenAI researcher.", "answer": "Dario Amodei" }
+          ]
+        },
+        {
+          "title": "U.S. Presidents",
+          "clues": [
+            { "value": 400, "prompt": "The first U.S. president.", "answer": "George Washington" },
+            { "value": 800, "prompt": "He gave the Gettysburg Address.", "answer": "Abraham Lincoln" },
+            { "value": 1200, "prompt": "The only president to serve more than two terms.", "answer": "Franklin D. Roosevelt" },
+            { "value": 1600, "prompt": "He resigned in 1974.", "answer": "Richard Nixon" },
+            { "value": 2000, "prompt": "The youngest elected president, in 1960.", "answer": "John F. Kennedy" }
+          ]
+        },
+        {
+          "title": "Music Theory",
+          "clues": [
+            { "value": 400, "prompt": "Number of notes in a chromatic scale.", "answer": "Twelve" },
+            { "value": 800, "prompt": "The Italian term for very loud.", "answer": "Fortissimo" },
+            { "value": 1200, "prompt": "The interval between C and G.", "answer": "A perfect fifth" },
+            { "value": 1600, "prompt": "Beethoven's Fifth Symphony is in this key.", "answer": "C minor" },
+            { "value": 2000, "prompt": "This 12-tone composition method was developed by Schoenberg.", "answer": "Serialism" }
+          ]
+        },
+        {
+          "title": "Geography",
+          "clues": [
+            { "value": 400, "prompt": "The longest river in the world.", "answer": "The Nile", "dailyDouble": true },
+            { "value": 800, "prompt": "The deepest ocean trench.", "answer": "The Mariana Trench" },
+            { "value": 1200, "prompt": "Tallest mountain on Earth measured base-to-peak (not above sea level).", "answer": "Mauna Kea" },
+            { "value": 1600, "prompt": "Country with the most time zones.", "answer": "France" },
+            { "value": 2000, "prompt": "The only sea on Earth without a coastline.", "answer": "The Sargasso Sea" }
+          ]
+        },
+        {
+          "title": "Programming Languages",
+          "clues": [
+            { "value": 400, "prompt": "Created by Guido van Rossum in 1991.", "answer": "Python" },
+            { "value": 800, "prompt": "Brendan Eich wrote it in 10 days in 1995.", "answer": "JavaScript" },
+            { "value": 1200, "prompt": "Designed at Bell Labs by Dennis Ritchie around 1972.", "answer": "C" },
+            { "value": 1600, "prompt": "Designed at Google starting 2007 for systems programming.", "answer": "Go" },
+            { "value": 2000, "prompt": "This memory-safe systems language hit 1.0 in 2015.", "answer": "Rust" }
+          ]
+        },
+        {
+          "title": "Pop Culture 2020s",
+          "clues": [
+            { "value": 400, "prompt": "Netflix Korean survival show that became a 2021 phenomenon.", "answer": "Squid Game" },
+            { "value": 800, "prompt": "The 2023 Greta Gerwig film with Margot Robbie in pink.", "answer": "Barbie" },
+            { "value": 1200, "prompt": "ChatGPT was released by this company in November 2022.", "answer": "OpenAI" },
+            { "value": 1600, "prompt": "Beyoncé's 2024 country album.", "answer": "Cowboy Carter" },
+            { "value": 2000, "prompt": "Taylor Swift's blockbuster 2023-24 concert tour.", "answer": "The Eras Tour" }
+          ]
+        }
+      ]
+    }
+  ],
+  "final": {
+    "category": "Famous Firsts",
+    "prompt": "This person was the first programmer, writing notes for Babbage's Analytical Engine in 1843.",
+    "answer": "Ada Lovelace"
+  }
+}

@@ -1,0 +1,14 @@
+node_modules
+dist
+.env
+.env.local
+*.log
+.DS_Store
+
+# Generated/ingested data — rebuild via pnpm data:build
+data/raw/
+data/episodes.json
+data/categories.json
+
+# Self-signed TLS cert — regenerated via pnpm cert
+certs/
