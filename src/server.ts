@@ -517,6 +517,12 @@ function onClientMessage(
     case "host:cancelInterview":
       if (isHost) dispatch({ type: "cancelInterview" });
       break;
+    case "host:setScore":
+      if (isHost) {
+        const score = Math.max(-100000, Math.min(100000, Math.floor(msg.score)));
+        dispatch({ type: "setScore", playerId: msg.playerId, score });
+      }
+      break;
     case "host:kickPlayer":
       if (isHost) {
         const sockets = world.playerSockets.get(msg.playerId) ?? [];
@@ -548,6 +554,19 @@ function onClientMessage(
     case "player:interview":
       if (playerId) {
         void handlePlayerInterview(playerId, msg.audioBase64, msg.mimeType);
+      }
+      break;
+    case "player:finalAnswerText":
+      if (playerId && world.state.phase === "FINAL_ANSWERING") {
+        if (world.pendingFinalAnswers.has(playerId)) {
+          world.pendingFinalAnswers.delete(playerId);
+        }
+        const text = (msg.text || "").trim().slice(0, 200);
+        dispatch({
+          type: "finalAnswerTranscribed",
+          playerId,
+          transcript: text,
+        });
       }
       break;
     case "player:wager":

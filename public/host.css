@@ -637,6 +637,23 @@ body {
   filter: brightness(1.25);
 }
 
+.value-cell.just-picked {
+  animation: cell-flash 420ms ease-out;
+}
+
+@keyframes cell-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 181, 59, 0.0);
+  }
+  30% {
+    box-shadow: 0 0 30px 6px rgba(245, 181, 59, 0.85);
+    filter: brightness(1.6);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 181, 59, 0);
+  }
+}
+
 /* Clue overlay */
 #clue-overlay {
   position: absolute;
@@ -965,6 +982,36 @@ body {
   font-size: 36px;
   color: var(--gold);
   text-shadow: 2px 2px 0 #000;
+  cursor: pointer;
+  padding: 0 8px;
+  border-radius: 4px;
+}
+
+.player-card .score:hover {
+  background: rgba(245, 181, 59, 0.15);
+}
+
+.player-card .score input.score-edit {
+  width: 120px;
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 32px;
+  text-align: center;
+  background: #000;
+  color: var(--gold);
+  border: 2px solid var(--gold);
+  border-radius: 4px;
+  outline: none;
+  padding: 2px 4px;
+  text-shadow: none;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.player-card .score input.score-edit::-webkit-outer-spin-button,
+.player-card .score input.score-edit::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .player-card .score.negative {

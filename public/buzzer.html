@@ -90,7 +90,7 @@
         <section id="screen-picking" class="screen hidden">
           <div id="pickingPickerView" class="hidden">
             <div class="big-msg">Your turn — pick a clue</div>
-            <div class="sub-msg" id="pickHint">Tap to talk. Try: "Oscars 16" or "Potpourri 800".</div>
+            <div class="sub-msg" id="pickHint">Tap to talk.</div>
             <div id="pickListening" class="pulse-wrap hidden">
               <div class="pulse"></div>
               <div class="pulse pulse-2"></div>
@@ -214,6 +214,33 @@
         <section id="screen-finalreading" class="screen hidden">
           <div class="big-msg">Listen to the final clue…</div>
           <div id="finalReadingCategory" class="final-category"></div>
+        </section>
+
+        <!-- Final answering: text entry -->
+        <section id="screen-finalanswering" class="screen hidden">
+          <div id="finalAnsweringActive" class="hidden">
+            <div class="big-msg">Final Jeopardy</div>
+            <div id="finalAnsweringCategory" class="final-category"></div>
+            <div class="sub-msg">Type your answer (others can't see it)</div>
+            <input
+              id="finalAnswerInput"
+              class="name-input"
+              type="text"
+              maxlength="200"
+              autocomplete="off"
+              autocapitalize="words"
+              placeholder="your answer"
+            />
+            <button id="finalAnswerSubmitBtn" class="primary-btn">Submit</button>
+          </div>
+          <div id="finalAnsweringWaiting" class="hidden">
+            <div class="big-msg">Submitted</div>
+            <div class="sub-msg">Waiting for others…</div>
+          </div>
+          <div id="finalAnsweringSpectator" class="hidden">
+            <div class="big-msg">Final Jeopardy</div>
+            <div class="sub-msg">Players are answering…</div>
+          </div>
         </section>
 
         <!-- Final reveal -->

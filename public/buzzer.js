@@ -26,7 +26,7 @@ const els = {
     ROUND_BREAK: document.getElementById("screen-roundbreak"),
     FINAL_WAGER: document.getElementById("screen-finalwager"),
     FINAL_READING: document.getElementById("screen-finalreading"),
-    FINAL_ANSWERING: document.getElementById("screen-answering"),
+    FINAL_ANSWERING: document.getElementById("screen-finalanswering"),
     FINAL_REVEAL: document.getElementById("screen-finalreveal"),
     GAME_OVER: document.getElementById("screen-gameover"),
     KICKED: document.getElementById("screen-kicked"),
@@ -58,6 +58,12 @@ const els = {
   interviewProcessing: document.getElementById("interviewProcessing"),
   interviewMicError: document.getElementById("interviewMicError"),
   interviewRetryMicBtn: document.getElementById("interviewRetryMicBtn"),
+  finalAnsweringActive: document.getElementById("finalAnsweringActive"),
+  finalAnsweringWaiting: document.getElementById("finalAnsweringWaiting"),
+  finalAnsweringSpectator: document.getElementById("finalAnsweringSpectator"),
+  finalAnsweringCategory: document.getElementById("finalAnsweringCategory"),
+  finalAnswerInput: document.getElementById("finalAnswerInput"),
+  finalAnswerSubmitBtn: document.getElementById("finalAnswerSubmitBtn"),
 
   buzzBtn: document.getElementById("buzzBtn"),
 
@@ -276,8 +282,7 @@ function onStateChanged() {
   // If we've left answering phase, ensure recording is stopped.
   const phase = state.phase;
   const buzzedIsMe = me && state.buzzedPlayerId === me.id;
-  const inAnsweringPhase =
-    phase === "ANSWERING" || phase === "DD_ANSWERING" || phase === "FINAL_ANSWERING";
+  const inAnsweringPhase = phase === "ANSWERING" || phase === "DD_ANSWERING";
   if (!inAnsweringPhase || !buzzedIsMe) {
     if (recordingInProgress) stopRecording(false);
   }
@@ -365,9 +370,12 @@ function render() {
       break;
     case "ANSWERING":
     case "DD_ANSWERING":
-    case "FINAL_ANSWERING":
       renderAnswering(phase);
       showScreen(phase);
+      break;
+    case "FINAL_ANSWERING":
+      renderFinalAnswering();
+      showScreen("FINAL_ANSWERING");
       break;
     case "JUDGING":
       showScreen("JUDGING");
@@ -484,6 +492,52 @@ function renderAnswering(phase) {
     const who = bp ? bp.name : "Someone";
     els.answeringOther.textContent = `${who} is answering…`;
   }
+}
+
+let finalAnswerSubmittedLocal = false;
+let lastFinalKey = null;
+
+function renderFinalAnswering() {
+  if (!state || !me) return;
+  // Reset local submitted flag if we re-entered FINAL_ANSWERING fresh
+  const key = state.finalPrompt || state.finalCategory || "fa";
+  if (key !== lastFinalKey) {
+    lastFinalKey = key;
+    finalAnswerSubmittedLocal = false;
+    if (els.finalAnswerInput) els.finalAnswerInput.value = "";
+  }
+  // Only players with a wager submitted (i.e. positive score) participate
+  const wagered = !!(state.finalWagerSubmitted && state.finalWagerSubmitted[me.id]);
+  if (!wagered) {
+    els.finalAnsweringActive.classList.add("hidden");
+    els.finalAnsweringWaiting.classList.add("hidden");
+    els.finalAnsweringSpectator.classList.remove("hidden");
+    return;
+  }
+  if (finalAnswerSubmittedLocal) {
+    els.finalAnsweringActive.classList.add("hidden");
+    els.finalAnsweringSpectator.classList.add("hidden");
+    els.finalAnsweringWaiting.classList.remove("hidden");
+    return;
+  }
+  els.finalAnsweringActive.classList.remove("hidden");
+  els.finalAnsweringSpectator.classList.add("hidden");
+  els.finalAnsweringWaiting.classList.add("hidden");
+  if (els.finalAnsweringCategory)
+    els.finalAnsweringCategory.textContent = state.finalCategory || "";
+}
+
+function submitFinalAnswerText() {
+  if (!state || state.phase !== "FINAL_ANSWERING") return;
+  if (finalAnswerSubmittedLocal) return;
+  const text = (els.finalAnswerInput?.value || "").trim();
+  if (!text) {
+    showToast("Type something first");
+    return;
+  }
+  finalAnswerSubmittedLocal = true;
+  send({ type: "player:finalAnswerText", text });
+  render();
 }
 
 function renderResolved() {
@@ -971,6 +1025,15 @@ els.finalWagerBtn.addEventListener("click", () => {
   els.finalWagerBtn.disabled = true;
   els.finalWagerBtn.textContent = "Submitted";
 });
+
+if (els.finalAnswerSubmitBtn) {
+  els.finalAnswerSubmitBtn.addEventListener("click", submitFinalAnswerText);
+}
+if (els.finalAnswerInput) {
+  els.finalAnswerInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitFinalAnswerText();
+  });
+}
 
 /* ---------------- Join form ---------------- */
 

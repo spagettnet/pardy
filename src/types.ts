@@ -136,6 +136,7 @@ export interface PublicState {
   pickerId: string | null;
   rounds: [PublicRound, PublicRound];
   finalCategory: string | null; // shown only during FINAL phases
+  finalPrompt: string | null; // populated during FINAL_READING / ANSWERING / REVEAL
   // Active clue context — prompt is sent during reading/answer phases.
   // Correct answer is ONLY included for the host display, after the clue resolves.
   currentClue: {
@@ -185,11 +186,13 @@ export type ClientMessage =
   | { type: "host:startInterview" }
   | { type: "host:skipInterviewPlayer" }
   | { type: "host:cancelInterview" }
+  | { type: "host:setScore"; playerId: string; score: number }
   | { type: "player:join"; name: string; rejoinToken?: string }
   | { type: "player:buzz" }
   | { type: "player:answer"; audioBase64: string; mimeType: string }
   | { type: "player:pickVoice"; audioBase64: string; mimeType: string }
   | { type: "player:interview"; audioBase64: string; mimeType: string }
+  | { type: "player:finalAnswerText"; text: string }
   | { type: "player:wager"; amount: number };
 
 export type ServerMessage =

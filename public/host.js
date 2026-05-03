@@ -521,6 +521,42 @@ function renderBoard() {
   }
 }
 
+function runClueZoom(clueRef, overlay) {
+  // Find the originating board cell.
+  const board = $("board");
+  if (!board) return;
+  const idx = 6 + clueRef.idx * 6 + clueRef.cat;
+  const cell = board.children[idx];
+  if (!cell) return;
+
+  const cellRect = cell.getBoundingClientRect();
+  const card = $("clue-card");
+  if (!card) return;
+  const cardRect = card.getBoundingClientRect();
+  const dx = cellRect.left - cardRect.left;
+  const dy = cellRect.top - cardRect.top;
+  const sx = cellRect.width / cardRect.width;
+  const sy = cellRect.height / cardRect.height;
+
+  // Start from the cell's position+scale, flash a "selected" highlight on the cell,
+  // then animate to identity (full overlay).
+  card.style.transformOrigin = "top left";
+  card.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+  card.style.opacity = "0.0";
+  cell.classList.add("just-picked");
+  // Force reflow so the transition sees the start state.
+  void card.offsetWidth;
+  card.style.transition = "transform 420ms cubic-bezier(0.2, 0.7, 0.3, 1), opacity 200ms ease-out";
+  card.style.transform = "translate(0, 0) scale(1, 1)";
+  card.style.opacity = "1";
+  setTimeout(() => {
+    card.style.transition = "";
+    card.style.transform = "";
+    card.style.opacity = "";
+    cell.classList.remove("just-picked");
+  }, 480);
+}
+
 function renderClueOverlay(phaseChanged) {
   const overlay = $("clue-overlay");
   const phase = state.phase;
@@ -538,8 +574,16 @@ function renderClueOverlay(phaseChanged) {
     return;
   }
 
+  const wasHidden = overlay.hidden;
   overlay.hidden = false;
   const c = state.currentClue;
+
+  // Animate from the picked board cell to full overlay (FLIP-style) the
+  // first frame the overlay appears for a new clue.
+  if (wasHidden && phaseChanged) {
+    runClueZoom(c, overlay);
+  }
+
   $("clue-value").textContent = `$${c.value}`;
   $("clue-prompt").textContent = c.prompt || "";
   $("clue-dd-splash").hidden = !c.dailyDouble || phase !== "READING";
@@ -601,8 +645,7 @@ function renderFinalWager() {
 function renderFinalPrompt() {
   $("final-category-2").textContent = state.finalCategory || "";
   const promptEl = $("final-prompt");
-  const c = state.currentClue;
-  promptEl.textContent = c?.prompt || "";
+  promptEl.textContent = state.finalPrompt || "";
   const answering = state.phase === "FINAL_ANSWERING";
   $("final-answering-text").hidden = !answering;
   const fp = $("final-progress");
@@ -666,7 +709,7 @@ function renderScoreboard() {
         <button class="kick-btn" title="Remove player" data-action="kickPlayer">×</button>
         <div class="mic" hidden>🎤</div>
         <div class="name"></div>
-        <div class="score"></div>
+        <div class="score" data-action="editScore" title="Click to edit"></div>
       `;
       sb.appendChild(card);
     }
@@ -678,9 +721,55 @@ function renderScoreboard() {
     card.classList.toggle("picker", p.id === state.pickerId);
     card.querySelector(".name").textContent = p.name;
     const scoreEl = card.querySelector(".score");
-    scoreEl.textContent = (p.score < 0 ? "-$" : "$") + Math.abs(p.score);
-    scoreEl.classList.toggle("negative", p.score < 0);
+    // Don't clobber the input while the host is editing the score
+    if (!scoreEl.querySelector("input")) {
+      scoreEl.textContent = (p.score < 0 ? "-$" : "$") + Math.abs(p.score);
+      scoreEl.classList.toggle("negative", p.score < 0);
+    }
     card.querySelector(".mic").hidden = state.buzzedPlayerId !== p.id;
+  });
+}
+
+function startScoreEdit(scoreEl, playerId) {
+  if (scoreEl.querySelector("input")) return;
+  const player = state?.players.find((p) => p.id === playerId);
+  if (!player) return;
+  const original = player.score;
+  scoreEl.textContent = "";
+  const input = document.createElement("input");
+  input.type = "number";
+  input.value = String(original);
+  input.className = "score-edit";
+  scoreEl.appendChild(input);
+  input.focus();
+  input.select();
+  let finished = false;
+  const commit = () => {
+    if (finished) return;
+    finished = true;
+    const v = parseInt(input.value, 10);
+    if (Number.isFinite(v) && v !== original) {
+      send({ type: "host:setScore", playerId, score: v });
+    }
+    scoreEl.textContent =
+      (player.score < 0 ? "-$" : "$") + Math.abs(player.score);
+  };
+  const cancel = () => {
+    if (finished) return;
+    finished = true;
+    scoreEl.textContent =
+      (original < 0 ? "-$" : "$") + Math.abs(original);
+  };
+  input.addEventListener("blur", commit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancel();
+      scoreEl.blur();
+    }
   });
 }
 
@@ -775,6 +864,13 @@ document.addEventListener("click", (e) => {
       if (confirm(`Remove ${player.name}?`)) {
         send({ type: "host:kickPlayer", playerId: pid });
       }
+      break;
+    }
+    case "editScore": {
+      const card = target.closest(".player-card");
+      const pid = card && card.dataset.playerId;
+      const scoreEl = card && card.querySelector(".score");
+      if (pid && scoreEl) startScoreEdit(scoreEl, pid);
       break;
     }
     case "skipInterview":

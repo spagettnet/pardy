@@ -171,12 +171,15 @@ Style rules:
 - Avoid clues that depend on visual or audio media.
 - Each prompt narrows to exactly ONE correct answer.
 
-CRITICAL — do not telegraph the answer:
-- The answer's name must NOT appear in the prompt.
-- Avoid near-tautologies ("This Italian Renaissance painter painted the Mona Lisa" telegraphs Leonardo).
-- Don't list distinctive features that uniquely identify the answer in too obvious a way.
+CRITICAL — DO NOT TELEGRAPH THE ANSWER. This is the most common failure mode and the one I will reject the hardest.
 
-Before emitting, walk through each clue and confirm: accurate (web search verified), single answer, not telegraphed, on-theme, escalating difficulty.
+Hard rules:
+1. NO WORD from the answer appears anywhere in the prompt. Not the full name, not a partial name, not a substring of the answer that's longer than 3 characters. If the answer is "Albert Einstein", the prompt cannot contain "Albert", "Einstein", "Einstein's", or any related word. If the answer is "The Great Gatsby", the prompt cannot contain "Gatsby" or "Great Gatsby". Run this check explicitly on every clue before emitting it.
+2. NO synonyms or rephrasings of the answer. If the answer is "Frankenstein", don't say "this Mary Shelley creature" or "Shelley's monster".
+3. NO near-tautologies. Bad: "This Italian Renaissance painter painted the Mona Lisa" (telegraphs Leonardo). Bad: "Marlon Brando's iconic role as the head of the Corleone family in this 1972 film" (the year + family + role uniquely identifies The Godfather and rephrases the answer).
+4. The clue should make a player THINK. If a 10-year-old who'd never heard of the answer could guess from the prompt alone, the clue is broken.
+
+Before emitting, walk through each clue and confirm: accurate (web search verified), single answer, not telegraphed (re-read once pretending you don't know the answer — does the prompt give it away?), on-theme, escalating difficulty.
 
 Return exactly 5 clues via the write_category tool. No prose.`;
 
@@ -437,6 +440,34 @@ export async function buildCustomBoard(
   return { title: plan.title.trim(), rounds: [r1, r2], final: fj };
 }
 
+// Stop-words we don't flag as leaks even if they appear in both prompt and
+// answer — they're noise, not identifying information.
+const STOPWORDS = new Set([
+  "the", "a", "an", "of", "in", "on", "to", "for", "and", "or", "but", "is",
+  "this", "that", "these", "those", "his", "her", "its", "their", "from",
+  "with", "by", "as", "at", "be", "was", "were", "are", "do", "did", "have",
+  "has", "had", "will", "what", "who", "which", "where", "when", "how",
+]);
+
+/**
+ * Returns the offending answer word if the prompt leaks the answer, else null.
+ * Considers any answer word longer than 3 characters that isn't a stopword.
+ */
+function detectAnswerLeak(prompt: string, answer: string): string | null {
+  const promptLower = " " + prompt.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ") + " ";
+  const answerWords = answer
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !STOPWORDS.has(w));
+  for (const w of answerWords) {
+    if (promptLower.includes(" " + w + " ")) return w;
+    // Catch suffix variants like "Einstein's"
+    if (promptLower.includes(" " + w)) return w;
+  }
+  return null;
+}
+
 function assembleClues(
   raw: { prompt: string; answer: string }[],
   roundNum: 1 | 2,
@@ -447,11 +478,24 @@ function assembleClues(
   for (let i = 0; i < 5; i++) {
     const r = raw[i];
     if (r && r.prompt && r.answer) {
-      out.push({
-        value: standardValues[i]!,
-        prompt: r.prompt.trim(),
-        answer: r.answer.trim(),
-      });
+      const prompt = r.prompt.trim();
+      const answer = r.answer.trim();
+      const leaked = detectAnswerLeak(prompt, answer);
+      if (leaked) {
+        // The model gave the answer away in the prompt. Drop it to a
+        // placeholder rather than ship a broken clue.
+        console.warn(
+          `[board] DROPPED leaky clue: answer="${answer}" leaked word="${leaked}" prompt="${prompt}"`,
+        );
+        out.push({
+          value: standardValues[i]!,
+          prompt: "(answer-leak detected — clue dropped)",
+          answer: "—",
+          missing: true,
+        });
+      } else {
+        out.push({ value: standardValues[i]!, prompt, answer });
+      }
     } else {
       // Failed clue → mark missing so it shows greyed-out in the UI.
       out.push({

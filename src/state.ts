@@ -14,6 +14,7 @@ export type StateEvent =
   | { type: "setConnected"; playerId: string; connected: boolean }
   | { type: "startGame" }
   | { type: "resetGame" } // back to LOBBY, clear scores + board, keep players
+  | { type: "setScore"; playerId: string; score: number }
   | { type: "matchPickFailed"; playerId: string; transcript: string; reason: string }
   | { type: "startInterview" }
   | { type: "interviewTranscribed"; playerId: string; transcript: string }
@@ -687,6 +688,11 @@ export function apply(
       state.interviewIdx = 0;
       break;
     }
+    case "setScore": {
+      const p = findPlayer(state, event.playerId);
+      if (p) p.score = event.score;
+      break;
+    }
     case "resetGame": {
       // Back to lobby. Keep the player list but reset scores and board state.
       const players = state.players.map((p) => ({
@@ -741,6 +747,13 @@ export function publicView(
     finalCategory:
       state.phase.startsWith("FINAL") || state.phase === "GAME_OVER"
         ? def.final.category
+        : null,
+    finalPrompt:
+      state.phase === "FINAL_READING" ||
+      state.phase === "FINAL_ANSWERING" ||
+      state.phase === "FINAL_REVEAL" ||
+      state.phase === "GAME_OVER"
+        ? def.final.prompt
         : null,
     currentClue: cc
       ? {
