@@ -51,10 +51,59 @@ function loadSample(): GameDef {
 export interface EpisodeSummary {
   airDate: string;
   title: string;
+  tier?: GameTier;
+  categories?: string[]; // round1 + round2 titles
 }
 
 export function listEpisodes(): EpisodeSummary[] {
   return loadEpisodes().map((e) => ({ airDate: e.airDate, title: e.title }));
+}
+
+export interface EpisodeSearchOpts {
+  q?: string;
+  tier?: GameTier;
+  year?: number;
+  limit?: number;
+}
+
+/**
+ * Search episodes by query string (matches date, title, or category names),
+ * tier, or year. Returns summaries sorted by date desc, capped by limit.
+ */
+export function searchEpisodes(opts: EpisodeSearchOpts = {}): EpisodeSummary[] {
+  const { q, tier, year, limit = 50 } = opts;
+  const eps = loadEpisodes();
+  const needle = (q || "").toLowerCase().trim();
+  const results: Array<EpisodeSummary & { score: number }> = [];
+  for (const ep of eps) {
+    if (tier && ep.tier !== tier) continue;
+    if (year !== undefined && !ep.airDate.startsWith(String(year))) continue;
+    let score = 0;
+    let categoriesAllText = "";
+    const cats: string[] = [];
+    for (const r of ep.rounds) {
+      for (const c of r.categories) cats.push(c.title);
+    }
+    categoriesAllText = cats.join(" • ").toLowerCase();
+    if (needle) {
+      const haystack = `${ep.airDate} ${ep.title} ${categoriesAllText}`.toLowerCase();
+      if (!haystack.includes(needle)) continue;
+      // Prioritize matches in title/date over deep category hits
+      if (ep.airDate.toLowerCase().includes(needle)) score += 10;
+      if (ep.title.toLowerCase().includes(needle)) score += 5;
+      if (categoriesAllText.includes(needle)) score += 1;
+    }
+    results.push({
+      airDate: ep.airDate,
+      title: ep.title,
+      tier: ep.tier,
+      categories: cats,
+      score,
+    });
+  }
+  // Sort: needle-match score first, then date desc.
+  results.sort((a, b) => b.score - a.score || b.airDate.localeCompare(a.airDate));
+  return results.slice(0, limit).map(({ score, ...rest }) => rest);
 }
 
 export function getEpisodeByAirDate(airDate: string): GameDef | null {

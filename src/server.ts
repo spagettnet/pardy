@@ -22,7 +22,9 @@ import {
   type GameMode,
   listEpisodes,
   listEpisodesByTier,
+  searchEpisodes,
 } from "./games.js";
+import type { GameTier } from "./types.js";
 import type {
   ClientMessage,
   GameDef,
@@ -440,11 +442,12 @@ function onClientMessage(
         world.pendingFinalAnswers.clear();
         if (msg.reloadGame) {
           const tier = msg.tier;
-          world.def = loadGame(
-            tier ? "tier" : ((process.env.GAME_MODE as GameMode) || "mix"),
-            process.env.GAME_AIR_DATE,
-            tier,
-          );
+          const airDate = msg.airDate;
+          let mode: GameMode;
+          if (airDate) mode = "episode";
+          else if (tier) mode = "tier";
+          else mode = (process.env.GAME_MODE as GameMode) || "mix";
+          world.def = loadGame(mode, airDate, tier);
           console.log(`[pardy] reloaded game: ${world.def.title}`);
         }
         // Preserve players + their identities; rebuild taken with missing-cell handling.
@@ -707,6 +710,20 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     });
     res.writeHead(200, { "content-type": "image/png" });
     res.end(png);
+    return;
+  }
+
+  // Episode search
+  if (path === "/api/episodes" && req.method === "GET") {
+    const q = url.searchParams.get("q") || undefined;
+    const tier = (url.searchParams.get("tier") as GameTier) || undefined;
+    const yearStr = url.searchParams.get("year");
+    const year = yearStr ? parseInt(yearStr, 10) : undefined;
+    const limitStr = url.searchParams.get("limit");
+    const limit = limitStr ? Math.min(200, Math.max(1, parseInt(limitStr, 10))) : 50;
+    const results = searchEpisodes({ q, tier, year, limit });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ count: results.length, results }));
     return;
   }
 

@@ -179,7 +179,7 @@ export type ClientMessage =
   | { type: "host:advance" }
   | { type: "host:revealNextFinal" }
   | { type: "host:endGame" }
-  | { type: "host:resetGame"; reloadGame?: boolean; tier?: GameTier }
+  | { type: "host:resetGame"; reloadGame?: boolean; tier?: GameTier; airDate?: string }
   | { type: "host:kickPlayer"; playerId: string }
   | { type: "host:startInterview" }
   | { type: "host:skipInterviewPlayer" }

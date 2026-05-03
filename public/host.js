@@ -172,6 +172,65 @@ function pickTier(tier) {
   send({ type: "host:resetGame", reloadGame: true, tier });
 }
 
+/* === Episode browser === */
+
+let epSearchTimer = null;
+async function refreshEpisodeResults() {
+  const q = document.getElementById("ep-search-input").value.trim();
+  const tier = document.getElementById("ep-tier-select").value;
+  const year = document.getElementById("ep-year-select").value;
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (tier) params.set("tier", tier);
+  if (year) params.set("year", year);
+  params.set("limit", "60");
+  const res = await fetch("/api/episodes?" + params);
+  const json = await res.json();
+  const ul = document.getElementById("ep-results");
+  ul.innerHTML = "";
+  if (!json.results || json.results.length === 0) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "no matches";
+    ul.appendChild(li);
+    return;
+  }
+  for (const ep of json.results) {
+    const li = document.createElement("li");
+    li.dataset.airDate = ep.airDate;
+    const date = document.createElement("span");
+    date.className = "ep-date";
+    date.textContent = ep.title.split("—")[0].trim() + " · " + ep.airDate;
+    li.appendChild(date);
+    if (ep.categories && ep.categories.length) {
+      const cats = document.createElement("div");
+      cats.className = "ep-cats";
+      cats.textContent = ep.categories.slice(0, 4).join(" • ");
+      li.appendChild(cats);
+    }
+    li.addEventListener("click", () => {
+      send({ type: "host:resetGame", reloadGame: true, airDate: ep.airDate });
+    });
+    ul.appendChild(li);
+  }
+}
+
+function debouncedSearch() {
+  clearTimeout(epSearchTimer);
+  epSearchTimer = setTimeout(refreshEpisodeResults, 200);
+}
+
+function populateYearSelect() {
+  const sel = document.getElementById("ep-year-select");
+  if (!sel) return;
+  for (let y = 2025; y >= 1984; y--) {
+    const opt = document.createElement("option");
+    opt.value = String(y);
+    opt.textContent = String(y);
+    sel.appendChild(opt);
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const mix = document.getElementById("tier-mix-btn");
   const reroll = document.getElementById("tier-reroll-btn");
@@ -188,6 +247,21 @@ document.addEventListener("DOMContentLoaded", () => {
       send({ type: "host:startInterview" });
     }
   });
+  populateYearSelect();
+  const epInput = document.getElementById("ep-search-input");
+  const epTier = document.getElementById("ep-tier-select");
+  const epYear = document.getElementById("ep-year-select");
+  if (epInput) epInput.addEventListener("input", debouncedSearch);
+  if (epTier) epTier.addEventListener("change", refreshEpisodeResults);
+  if (epYear) epYear.addEventListener("change", refreshEpisodeResults);
+  // Lazy-load when the user expands the picker for the first time.
+  const epDetails = document.getElementById("episode-browser");
+  if (epDetails) {
+    epDetails.addEventListener("toggle", () => {
+      if (epDetails.open) refreshEpisodeResults();
+    }, { once: false });
+  }
+
   if (reroll) reroll.addEventListener("click", () => {
     // Re-roll: send the current title's inferred tier if we can detect it
     const title = state && state.gameTitle ? state.gameTitle : "";

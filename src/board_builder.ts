@@ -45,7 +45,27 @@ Coverage rules:
 
 Some categories may explicitly name a player ("BOB'S CHILDHOOD" — for clues about places/people Bob mentioned), but most should not.
 
-Once you've finished researching, call the generate_board tool with the complete board. Do not output any other text after the tool call. The tool call is the deliverable.`;
+## FINAL REVIEW (mandatory, before calling the tool)
+
+After drafting all 60 clues + Final, walk through every single one and check it against the rubric below. If ANY clue fails ANY check, fix it before emitting. Do this review out loud in your thinking — it is more important than fast turnaround.
+
+For each clue, verify:
+
+1. **Accuracy.** The answer is factually correct. If you weren't sure, you searched the web for it. Names, dates, scores, lyrics, locations are exact.
+2. **Single answer.** The prompt narrows to exactly one correct answer. If multiple things plausibly fit, rephrase to disambiguate (add a year, a context, a qualifier).
+3. **No telegraphing.** The answer is NOT in the prompt. Re-read each prompt as if you didn't know the answer — would it still feel like a question? Specifically:
+   - The answer's name does not appear in the prompt.
+   - The prompt is not a near-tautology ("This Italian Renaissance painter painted the Mona Lisa" telegraphs Leonardo).
+   - The prompt does not list distinctive features that uniquely identify the answer in a way only that answer satisfies (e.g. "This 1985 film by Robert Zemeckis stars Michael J. Fox and a DeLorean" is too giveaway-y; "Marty McFly travels to 1955 in this 1985 film" is fine).
+4. **On theme.** The clue belongs in its category. A clue tagged "1990s SITCOMS" must be about a 1990s sitcom, not a 1980s drama.
+5. **Difficulty escalates.** Within the category, $200 is recall-level for the targeted player; $1000 (or $2000 in round 2) is a stretch from the same domain. The middle three values rise smoothly.
+6. **Player-specific clues are actually personal.** If a category is tagged with a targetedPlayer, the clues should hit that player's stated interests as described in their interview transcript. Don't slot generic trivia into a "BOB'S BEAT" category.
+7. **Final Jeopardy** has a clear, single answer; no easter eggs in the prompt; difficulty is "broadly known but tricky" — not unanswerable.
+8. **Format.** Answer is the noun, not phrased as a question ("Albert Einstein", not "Who is Albert Einstein").
+
+If the review surfaces issues, FIX them in the same pass — re-check facts via web_search if needed, then re-verify all 8 checks before emitting. Do not emit a draft you wouldn't be proud to host.
+
+When the whole board passes review, call the generate_board tool. Do not output any other text after the tool call. The tool call is the deliverable.`;
 
 const categorySchema = {
   type: "object" as const,

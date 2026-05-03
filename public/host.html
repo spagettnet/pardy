@@ -49,6 +49,32 @@
                 <button id="tier-reroll-btn" class="tier-btn">Re-roll same tier</button>
                 <button id="custom-board-btn" class="tier-btn custom-board-btn">✨ Custom board (interview &amp; build)</button>
               </div>
+              <details id="episode-browser">
+                <summary>Browse a specific episode…</summary>
+                <div class="ep-search">
+                  <input
+                    id="ep-search-input"
+                    type="search"
+                    placeholder="search by date (2003), category (olympics), or 'final'"
+                    autocomplete="off"
+                  />
+                  <div id="ep-search-filters">
+                    <select id="ep-tier-select">
+                      <option value="">any tier</option>
+                      <option value="regular">Regular</option>
+                      <option value="kids">Kids Week</option>
+                      <option value="teen">Teen Tournament</option>
+                      <option value="celebrity">Celebrity</option>
+                      <option value="college">College Champ.</option>
+                      <option value="tournament">Tournament</option>
+                    </select>
+                    <select id="ep-year-select">
+                      <option value="">any year</option>
+                    </select>
+                  </div>
+                  <ul id="ep-results"></ul>
+                </div>
+              </details>
             </div>
           </div>
         </section>
