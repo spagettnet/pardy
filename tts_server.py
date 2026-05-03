@@ -26,16 +26,23 @@ def download_if_missing(url: str, path: str) -> None:
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     name = os.path.basename(path)
+    # Download to a .partial path and atomic-rename on success so an
+    # interrupted curl can't leave a truncated file in place.
+    tmp = path + ".partial"
+    if os.path.exists(tmp):
+        os.remove(tmp)
     print(f"[tts] Downloading {name}...")
     result = subprocess.run(
-        ["curl", "-L", "--progress-bar", "-o", path, url],
+        ["curl", "-L", "--fail", "--progress-bar", "-o", tmp, url],
         check=False,
     )
-    if result.returncode != 0 or not os.path.exists(path):
+    if result.returncode != 0 or not os.path.exists(tmp):
         print(f"[tts] Failed to download {name}")
-        if os.path.exists(path):
-            os.remove(path)
+        if os.path.exists(tmp):
+            os.remove(tmp)
         raise RuntimeError(f"Could not download {name}")
+    os.rename(tmp, path)
+    print(f"[tts] {name} ready ({os.path.getsize(path) // (1024 * 1024)} MB)")
 
 
 def get_kokoro():
