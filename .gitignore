@@ -12,3 +12,9 @@ data/categories.json
 
 # Self-signed TLS cert — regenerated via pnpm cert
 certs/
+
+# Python venv + caches for the vendored TTS/STT services
+.venv/
+__pycache__/
+.kokoro-models/
+# (uv.lock IS committed for reproducibility)

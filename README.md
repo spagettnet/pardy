@@ -12,43 +12,60 @@ phone   ──MIC──►  STT ──text──► Haiku judge ──► +/- sc
 laptop  ◄──QR───  phones join http://<lan-ip>:3030/buzzer
 ```
 
-Built on top of two services from
-[`voice_xw`](../voice_xw): Kokoro TTS and faster-whisper STT.
+All voice services run locally — no cloud-side STT/TTS. The repo is
+self-contained: vendored Python TTS (Kokoro ONNX) and STT (faster-whisper)
+boot alongside the Node game server.
 
 ## Stack
 
 - Node 22+ (TypeScript via `tsx`)
 - `ws` for websockets (host + phones)
-- `@anthropic-ai/sdk` for the Haiku judge
-- Local Kokoro TTS server at `:8000` (from `voice_xw`)
-- Local faster-whisper STT server at `:8001` (from `voice_xw`)
+- `@anthropic-ai/sdk` (works against direct Anthropic or OpenRouter)
+- Vendored Kokoro TTS server (`tts_server.py`, `:8000`)
+- Vendored faster-whisper STT server (`stt_server.py`, `:8001`)
+- Python deps managed by [uv](https://docs.astral.sh/uv/) via `pyproject.toml`
 - Vanilla HTML/CSS/JS for both UIs (no build step)
 
 ## One-time setup
 
 ```bash
+# Node deps
 pnpm install
-cp .env.example .env
-# add ANTHROPIC_API_KEY for the judge (without it, falls back to dumb string match)
 
-# Pull and process the J! Archive dataset (seasons 1-41, ~530k clues -> ~1000 complete episodes)
+# Python deps for TTS/STT (handled lazily by `pnpm party`, but you can prime it)
+uv sync
+
+cp .env.example .env
+# add OPENROUTER_API_KEY (recommended) or ANTHROPIC_API_KEY for the judge
+# without either, judge falls back to dumb string match
+
+# Pull and process the J! Archive dataset (~530k clues -> ~1000 complete episodes + tournaments)
 pnpm data:build
+
+# Generate a self-signed cert so phone mics can prompt for permission over LAN
+pnpm cert
 ```
 
-The data build is gitignored; run it once on a new clone.
+Requires `uv` for the Python services: `brew install uv` (or `curl -LsSf https://astral.sh/uv/install.sh | sh`).
 
 ## Running a party
 
-In three terminals:
+```bash
+pnpm party
+```
+
+That single command boots TTS, STT, and the game server, waits for the voice
+services' `/health` endpoints, and tails them all under `logs/`. Ctrl-C kills
+all three.
+
+If you'd rather run them separately:
 
 ```bash
-# 1. Kokoro TTS (from the voice_xw repo)
-cd ../voice_xw && pnpm tts:start
-
-# 2. faster-whisper STT (from the voice_xw repo)
-cd ../voice_xw && pnpm stt:start
-
-# 3. Pardy
+# terminal 1
+pnpm tts:start
+# terminal 2
+pnpm stt:start
+# terminal 3
 pnpm dev
 ```
 

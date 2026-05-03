@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Boot the full Pardy stack: Kokoro TTS + faster-whisper STT (from voice_xw)
-# plus the pardy dev server. Ctrl-C kills all three.
+# Boot the full Pardy stack: local Kokoro TTS + faster-whisper STT
+# (vendored Python services in this repo) plus the pardy dev server.
+# Ctrl-C kills all three.
 
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VOICE="${VOICE_XW_DIR:-$ROOT/../voice_xw}"
 LOG_DIR="$ROOT/logs"
 mkdir -p "$LOG_DIR"
 
-if [ ! -d "$VOICE" ]; then
-  echo "voice_xw not found at $VOICE"
-  echo "set VOICE_XW_DIR=/path/to/voice_xw or clone it next to pardy"
+if ! command -v uv >/dev/null 2>&1; then
+  echo "[start] uv not found. Install via: brew install uv"
+  echo "[start]   or: curl -LsSf https://astral.sh/uv/install.sh | sh"
   exit 1
 fi
 
@@ -25,7 +25,6 @@ cleanup() {
       kill "$pid" 2>/dev/null || true
     fi
   done
-  # Best-effort: kill any leftover children spawned by pnpm (uvicorn, tsx, etc.)
   for pid in "${PIDS[@]}"; do
     pkill -P "$pid" 2>/dev/null || true
   done
@@ -44,13 +43,14 @@ start_one() {
   echo "[start]   pid=$pid"
 }
 
-start_one tts bash -c "cd '$VOICE' && pnpm tts:start"
-start_one stt bash -c "cd '$VOICE' && pnpm stt:start"
+start_one tts bash -c "cd '$ROOT' && pnpm tts:start"
+start_one stt bash -c "cd '$ROOT' && pnpm stt:start"
 
 # Wait for both voice services to come up before starting pardy so the first
-# clue read doesn't fail.
-echo "[start] waiting for voice services…"
-for i in $(seq 1 60); do
+# clue read doesn't fail. Cold start can take a while because Kokoro and
+# faster-whisper download model weights on first run.
+echo "[start] waiting for voice services (first run downloads models)…"
+for i in $(seq 1 180); do
   tts_ok=$(curl -sf -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health 2>/dev/null || echo 0)
   stt_ok=$(curl -sf -o /dev/null -w "%{http_code}" http://127.0.0.1:8001/health 2>/dev/null || echo 0)
   if [ "$tts_ok" = "200" ] && [ "$stt_ok" = "200" ]; then
@@ -58,15 +58,15 @@ for i in $(seq 1 60); do
     break
   fi
   sleep 1
-  if [ "$i" = "60" ]; then
-    echo "[start] WARNING: voice services not ready after 60s; starting pardy anyway"
+  if [ "$i" = "180" ]; then
+    echo "[start] WARNING: voice services not ready after 3 min; starting pardy anyway"
   fi
 done
 
 start_one pardy bash -c "cd '$ROOT' && pnpm dev"
 
 echo ""
-echo "[start] all services up. open http://localhost:${PORT:-3030}/host"
+echo "[start] all services up. open https://localhost:${PORT:-3030}/host"
 echo "[start] logs:   tail -f $LOG_DIR/{tts,stt,pardy}.log"
 echo "[start] Ctrl-C to stop everything."
 echo ""

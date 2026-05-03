@@ -12,6 +12,8 @@
     "test": "node --test --import tsx 'src/**/*.test.ts'",
     "data:build": "tsx scripts/build_episodes.ts",
     "cert": "bash scripts/gen-cert.sh",
+    "tts:start": "bash scripts/start-kokoro.sh",
+    "stt:start": "bash scripts/start-stt.sh",
     "party": "bash scripts/start.sh"
   },
   "dependencies": {
