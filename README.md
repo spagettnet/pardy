@@ -8,7 +8,7 @@ Your laptop is the game board. Phones are buzzers. A speech-to-text model listen
 
 The whole stack runs on your machine. The only thing it phones home for is the LLM judge — and you can point that at OpenRouter (with web search via `:online`) instead of Anthropic if you'd rather.
 
-> Built in a weekend, played at one. Use it, fork it, break it.
+> Built in a couple hours with Opus 4.7!
 
 ---
 
