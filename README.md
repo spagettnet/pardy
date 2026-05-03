@@ -38,9 +38,23 @@ When a clue is picked, Kokoro reads it aloud through your laptop speakers. Phone
 
 The killer mode. Each player records ~60 seconds on what they're good at. Opus 4.7 takes the transcripts, does live web research, and emits a tailored 6×5 + 6×5 + Final Jeopardy board with categories aimed at each player's strengths *and* weaknesses. Real research = real facts, not LLM hallucination — clues actually check out.
 
+The build is **parallel**: a small planner call decides the 12 categories + Final, then 13 fan-out calls (one per category) each do their own web search and write 5 clues. Live progress streams to the host UI. Boards persist to disk under a "Saved Custom" tier so you can replay the same one next party.
+
 ![building custom board](docs/screenshots/host-building.png)
 
 The model runs through OpenRouter's `:online` (Exa-backed search) by default, or Anthropic's native `web_search_20260209` server tool if you have a direct API key.
+
+### Final Jeopardy
+
+Players sit next to each other and would hear each other speak, so Final answers are typed (not voice). Wagers are submitted privately on each phone first, then everyone gets the same prompt and types their best guess.
+
+![final jeopardy text input](docs/screenshots/phone-final-text.png)
+
+### Host controls
+
+Click any score on the laptop scoreboard to edit it inline — useful when the LLM judge gets pedantic and you want to override without going through the modal flow. The host can also kick players from their cards, restart the game, reload the board, and pick exact episodes from a search panel covering all 8,660 episodes (1984–2025).
+
+![inline score editor](docs/screenshots/host-score-edit.png)
 
 ---
 
