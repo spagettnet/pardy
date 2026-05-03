@@ -1,5 +1,7 @@
 export type Phase =
   | "LOBBY"
+  | "INTERVIEW"
+  | "BUILDING"
   | "PICKING"
   | "READING"
   | "OPEN"
@@ -102,6 +104,11 @@ export interface GameState {
   // Snapshot of the clue that the lastJudgement applies to. Stays alive
   // past the advance so retroactive overrides still find it.
   lastClueRef: ClueRef | null;
+  // Custom-board interview state
+  interviewQueue: string[]; // player ids in order
+  interviewIdx: number;
+  interviewTranscripts: Record<string, string>;
+  interviewError: string | null;
 }
 
 // === Public-facing state (sanitized; never includes answers) ===
@@ -151,6 +158,12 @@ export interface PublicState {
   } | null;
   lastJudgement: GameState["lastJudgement"];
   gameTitle: string;
+  // Interview/custom-board fields (only meaningful in INTERVIEW/BUILDING phase)
+  interview: {
+    currentPlayerId: string | null;
+    submitted: Record<string, boolean>;
+    error: string | null;
+  };
 }
 
 // === Messages ===
@@ -168,10 +181,14 @@ export type ClientMessage =
   | { type: "host:endGame" }
   | { type: "host:resetGame"; reloadGame?: boolean; tier?: GameTier }
   | { type: "host:kickPlayer"; playerId: string }
+  | { type: "host:startInterview" }
+  | { type: "host:skipInterviewPlayer" }
+  | { type: "host:cancelInterview" }
   | { type: "player:join"; name: string; rejoinToken?: string }
   | { type: "player:buzz" }
   | { type: "player:answer"; audioBase64: string; mimeType: string }
   | { type: "player:pickVoice"; audioBase64: string; mimeType: string }
+  | { type: "player:interview"; audioBase64: string; mimeType: string }
   | { type: "player:wager"; amount: number };
 
 export type ServerMessage =

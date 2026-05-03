@@ -33,6 +33,7 @@ import type {
   TtsTag,
 } from "./types.js";
 import { judgeAnswer, matchPick, type BoardCell } from "./judge.js";
+import { buildCustomBoard, type PlayerProfile } from "./board_builder.js";
 import {
   synthesizeSpeech,
   transcribeAudio,
@@ -207,6 +208,43 @@ function runEffect(eff: Effect): void {
     case "promptPlayerToBuzz":
       sendToPlayer(eff.playerId, { type: "youBuzzed" });
       break;
+    case "promptInterview":
+      sendToPlayer(eff.playerId, { type: "youBuzzed" });
+      break;
+    case "buildBoard":
+      void runBoardBuild();
+      break;
+  }
+}
+
+async function runBoardBuild(): Promise<void> {
+  const profiles: PlayerProfile[] = [];
+  for (const pid of world.state.interviewQueue) {
+    const player = world.state.players.find((p) => p.id === pid);
+    const transcript = world.state.interviewTranscripts[pid];
+    if (player && transcript) {
+      profiles.push({ name: player.name, transcript });
+    }
+  }
+  if (profiles.length === 0) {
+    dispatch({ type: "boardBuildFailed", reason: "no interview transcripts" });
+    return;
+  }
+  try {
+    console.log(`[board] building custom board for ${profiles.length} player(s) with Opus 4.7…`);
+    const startedAt = Date.now();
+    const def = await buildCustomBoard(profiles);
+    const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+    console.log(`[board] built "${def.title}" in ${elapsed}s`);
+    world.def = def;
+    dispatch({ type: "boardBuildCompleted" });
+  } catch (err) {
+    console.error(`[board] build failed:`, err);
+    sendToHosts({
+      type: "error",
+      message: `Board build failed: ${(err as Error).message}`,
+    });
+    dispatch({ type: "boardBuildFailed", reason: (err as Error).message });
   }
 }
 
@@ -417,6 +455,19 @@ function onClientMessage(
         broadcastState();
       }
       break;
+    case "host:startInterview":
+      if (isHost) {
+        clearTimers();
+        world.audioStore.clear();
+        dispatch({ type: "startInterview" });
+      }
+      break;
+    case "host:skipInterviewPlayer":
+      if (isHost) dispatch({ type: "skipInterviewPlayer" });
+      break;
+    case "host:cancelInterview":
+      if (isHost) dispatch({ type: "cancelInterview" });
+      break;
     case "host:kickPlayer":
       if (isHost) {
         const sockets = world.playerSockets.get(msg.playerId) ?? [];
@@ -445,6 +496,11 @@ function onClientMessage(
         void handlePlayerPickVoice(playerId, msg.audioBase64, msg.mimeType);
       }
       break;
+    case "player:interview":
+      if (playerId) {
+        void handlePlayerInterview(playerId, msg.audioBase64, msg.mimeType);
+      }
+      break;
     case "player:wager":
       if (playerId) {
         dispatch({ type: "wager", playerId, amount: msg.amount });
@@ -458,6 +514,33 @@ function playerIdForSocket(ws: WebSocket): string | null {
     if (sockets.some((s) => s.ws === ws)) return pid;
   }
   return null;
+}
+
+async function handlePlayerInterview(
+  playerId: string,
+  audioBase64: string,
+  mimeType: string,
+): Promise<void> {
+  if (world.state.phase !== "INTERVIEW") return;
+  const expected =
+    world.state.interviewQueue[world.state.interviewIdx] ?? null;
+  if (expected !== playerId) return;
+  let transcript = "";
+  try {
+    const buf = Buffer.from(audioBase64, "base64");
+    transcript = await transcribeAudio(buf, mimeType);
+  } catch (err) {
+    console.error(`[interview] STT failed:`, err);
+    sendToPlayer(playerId, {
+      type: "error",
+      message: `Couldn't hear you — try again.`,
+    });
+    return;
+  }
+  console.log(
+    `[interview] ${playerId} (${world.state.players.find((p) => p.id === playerId)?.name}): "${transcript.slice(0, 100)}…"`,
+  );
+  dispatch({ type: "interviewTranscribed", playerId, transcript });
 }
 
 async function handlePlayerPickVoice(
@@ -640,7 +723,16 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         gameTitle: world.def.title,
         episodeCount: listEpisodes().length,
         tiers: listEpisodesByTier(),
-        services: { tts: ttsOk, stt: sttOk, judge: !!process.env.ANTHROPIC_API_KEY },
+        services: {
+          tts: ttsOk,
+          stt: sttOk,
+          judge: !!(process.env.ANTHROPIC_API_KEY || process.env.OPENROUTER_API_KEY),
+          backend: process.env.ANTHROPIC_API_KEY
+            ? "anthropic"
+            : process.env.OPENROUTER_API_KEY
+              ? "openrouter"
+              : "none",
+        },
       }),
     );
     return;

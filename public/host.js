@@ -11,6 +11,8 @@ const audioEl = $("tts");
 
 const SCREENS = [
   "lobby",
+  "interview-screen",
+  "building-screen",
   "board-screen",
   "dd-wager-screen",
   "round-break-screen",
@@ -173,8 +175,18 @@ function pickTier(tier) {
 document.addEventListener("DOMContentLoaded", () => {
   const mix = document.getElementById("tier-mix-btn");
   const reroll = document.getElementById("tier-reroll-btn");
+  const customBoard = document.getElementById("custom-board-btn");
   if (mix) mix.addEventListener("click", () => {
     send({ type: "host:resetGame", reloadGame: true });
+  });
+  if (customBoard) customBoard.addEventListener("click", () => {
+    if (!state || !state.players || state.players.length === 0) {
+      alert("Need at least one player joined first.");
+      return;
+    }
+    if (confirm(`Start interviews for ${state.players.length} player(s)? Each will be asked what they're good at.`)) {
+      send({ type: "host:startInterview" });
+    }
   });
   if (reroll) reroll.addEventListener("click", () => {
     // Re-roll: send the current title's inferred tier if we can detect it
@@ -214,6 +226,11 @@ function render() {
   if (phase === "LOBBY") {
     showScreen("lobby");
     renderLobby();
+  } else if (phase === "INTERVIEW") {
+    showScreen("interview-screen");
+    renderInterview();
+  } else if (phase === "BUILDING") {
+    showScreen("building-screen");
   } else if (
     phase === "PICKING" ||
     phase === "READING" ||
@@ -249,6 +266,38 @@ function render() {
   }
 
   renderFloatingControls();
+}
+
+function renderInterview() {
+  const interview = state.interview || {};
+  const currentId = interview.currentPlayerId;
+  const submitted = interview.submitted || {};
+  const current = state.players.find((p) => p.id === currentId);
+  const nameEl = $("interview-current-name");
+  if (nameEl) nameEl.textContent = current ? current.name : "...";
+  const roster = $("interview-roster");
+  if (!roster) return;
+  roster.innerHTML = "";
+  for (const p of state.players) {
+    const li = document.createElement("li");
+    if (p.id === currentId) li.classList.add("current");
+    const name = document.createElement("span");
+    name.textContent = p.name;
+    li.appendChild(name);
+    const status = document.createElement("span");
+    if (submitted[p.id]) {
+      status.className = "check";
+      status.textContent = "✓ done";
+    } else if (p.id === currentId) {
+      status.className = "pending";
+      status.textContent = "recording…";
+    } else {
+      status.className = "pending";
+      status.textContent = "waiting";
+    }
+    li.appendChild(status);
+    roster.appendChild(li);
+  }
 }
 
 function renderTopBar() {
@@ -620,6 +669,14 @@ document.addEventListener("click", (e) => {
       }
       break;
     }
+    case "skipInterview":
+      send({ type: "host:skipInterviewPlayer" });
+      break;
+    case "cancelInterview":
+      if (confirm("Cancel custom-board build?")) {
+        send({ type: "host:cancelInterview" });
+      }
+      break;
   }
 });
 

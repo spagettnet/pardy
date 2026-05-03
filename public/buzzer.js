@@ -14,6 +14,8 @@ const els = {
     join: document.getElementById("screen-join"),
     LOBBY: document.getElementById("screen-lobby"),
     PICKING: document.getElementById("screen-picking"),
+    INTERVIEW: document.getElementById("screen-interview"),
+    BUILDING: document.getElementById("screen-building"),
     READING: document.getElementById("screen-reading"),
     OPEN: document.getElementById("screen-open"),
     ANSWERING: document.getElementById("screen-answering"),
@@ -43,8 +45,19 @@ const els = {
   pickRecBtn: document.getElementById("pickRecBtn"),
   pickRecLabel: document.getElementById("pickRecLabel"),
   pickListening: document.getElementById("pickListening"),
+  pickHint: document.getElementById("pickHint"),
+  pickProcessing: document.getElementById("pickProcessing"),
   pickMicError: document.getElementById("pickMicError"),
   pickRetryMicBtn: document.getElementById("pickRetryMicBtn"),
+  interviewSelf: document.getElementById("interviewSelf"),
+  interviewSpectator: document.getElementById("interviewSpectator"),
+  interviewWaitingFor: document.getElementById("interviewWaitingFor"),
+  interviewRecBtn: document.getElementById("interviewRecBtn"),
+  interviewRecLabel: document.getElementById("interviewRecLabel"),
+  interviewListening: document.getElementById("interviewListening"),
+  interviewProcessing: document.getElementById("interviewProcessing"),
+  interviewMicError: document.getElementById("interviewMicError"),
+  interviewRetryMicBtn: document.getElementById("interviewRetryMicBtn"),
 
   buzzBtn: document.getElementById("buzzBtn"),
 
@@ -103,9 +116,11 @@ let recAutoStopTimer = null;
 let recordingInProgress = false;
 let answerSubmittedForBuzzKey = null;
 let micPermissionDenied = false;
-let recPurpose = "answer"; // "answer" | "pick"
+let recPurpose = "answer"; // "answer" | "pick" | "interview"
 let pickRecording = false;
 let pickMicDenied = false;
+let interviewRecording = false;
+let interviewMicDenied = false;
 
 function getName() {
   return localStorage.getItem(LS_NAME) || "";
@@ -326,6 +341,13 @@ function render() {
 
   const phase = state.phase;
   switch (phase) {
+    case "INTERVIEW":
+      renderInterview();
+      showScreen("INTERVIEW");
+      break;
+    case "BUILDING":
+      showScreen("BUILDING");
+      break;
     case "LOBBY":
       renderLobby();
       showScreen("LOBBY");
@@ -408,10 +430,17 @@ function renderPicking() {
   if (state.pickerId === me.id) {
     els.pickingPickerView.classList.remove("hidden");
     els.pickingOtherView.classList.add("hidden");
-    if (!pickRecording) {
-      els.pickRecLabel.textContent = "RECORD";
-      els.pickRecBtn.classList.remove("buzzed");
+    if (pickRecording) {
+      els.pickRecLabel.textContent = "Stop & submit";
+      els.pickRecBtn.classList.add("recording");
+      els.pickListening.classList.remove("hidden");
+      els.pickHint.classList.add("hidden");
+      els.pickProcessing.classList.add("hidden");
+    } else {
+      els.pickRecLabel.textContent = "Tap to talk";
+      els.pickRecBtn.classList.remove("recording");
       els.pickListening.classList.add("hidden");
+      els.pickHint.classList.remove("hidden");
     }
     els.pickMicError.classList.toggle("hidden", !pickMicDenied);
   } else {
@@ -704,8 +733,9 @@ async function startRecording(purpose = "answer") {
     return;
   }
   if (recAutoStopTimer) clearTimeout(recAutoStopTimer);
-  // Picks have a slightly shorter window because they're terse.
-  const stopAfter = purpose === "pick" ? 5000 : 7000;
+  // Picks are terse, interviews are long-form.
+  const stopAfter =
+    purpose === "pick" ? 5000 : purpose === "interview" ? 60000 : 7000;
   recAutoStopTimer = setTimeout(() => stopRecording(true), stopAfter);
 }
 
@@ -735,6 +765,20 @@ async function onRecorderStop() {
   const mime = recMime || "audio/webm";
   const purpose = recPurpose;
   recChunks = [];
+  if (purpose === "interview") {
+    interviewRecording = false;
+    render();
+    if (!submit || chunks.length === 0) return;
+    try {
+      const blob = new Blob(chunks, { type: mime });
+      const buf = await blob.arrayBuffer();
+      const b64 = bufToBase64(buf);
+      send({ type: "player:interview", audioBase64: b64, mimeType: mime });
+    } catch {
+      showToast("Failed to submit interview");
+    }
+    return;
+  }
   if (purpose === "pick") {
     pickRecording = false;
     render();
@@ -765,30 +809,88 @@ async function onRecorderStop() {
 async function startPickRecording() {
   if (pickRecording) return;
   pickRecording = true;
-  els.pickRecLabel.textContent = "STOP";
-  els.pickRecBtn.classList.add("buzzed");
-  els.pickListening.classList.remove("hidden");
+  render();
   await startRecording("pick");
   if (!recordingInProgress) {
-    // Failed to start (mic denied etc.) — undo state.
     pickRecording = false;
-    els.pickRecLabel.textContent = "RECORD";
-    els.pickRecBtn.classList.remove("buzzed");
-    els.pickListening.classList.add("hidden");
+    render();
+  }
+}
+
+async function startInterviewRecording() {
+  if (interviewRecording) return;
+  interviewRecording = true;
+  render();
+  await startRecording("interview");
+  if (!recordingInProgress) {
+    interviewRecording = false;
+    interviewMicDenied = true;
+    render();
+  }
+}
+
+function stopInterviewRecording(submit) {
+  if (!interviewRecording) return;
+  interviewRecording = false;
+  if (submit !== false) {
+    els.interviewProcessing.classList.remove("hidden");
+    els.interviewListening.classList.add("hidden");
+  }
+  stopRecording(submit !== false);
+  render();
+}
+
+function renderInterview() {
+  if (!state || !me) return;
+  const interview = state.interview || {};
+  const isMe = interview.currentPlayerId === me.id;
+  const submitted = !!(interview.submitted && interview.submitted[me.id]);
+  if (isMe && !submitted) {
+    els.interviewSelf.classList.remove("hidden");
+    els.interviewSpectator.classList.add("hidden");
+    if (interviewRecording) {
+      els.interviewRecLabel.textContent = "Stop & submit";
+      els.interviewRecBtn.classList.add("recording");
+      els.interviewListening.classList.remove("hidden");
+      els.interviewProcessing.classList.add("hidden");
+    } else {
+      els.interviewRecLabel.textContent = "Tap to talk";
+      els.interviewRecBtn.classList.remove("recording");
+      els.interviewListening.classList.add("hidden");
+    }
+    els.interviewMicError.classList.toggle("hidden", !interviewMicDenied);
+  } else {
+    els.interviewSelf.classList.add("hidden");
+    els.interviewSpectator.classList.remove("hidden");
+    const cur = state.players.find((p) => p.id === interview.currentPlayerId);
+    els.interviewWaitingFor.textContent = submitted
+      ? "You're done — waiting for others"
+      : cur
+        ? cur.name
+        : "Someone";
+    if (interviewRecording) stopInterviewRecording(false);
   }
 }
 
 function stopPickRecording(submit) {
   if (!pickRecording) return;
   pickRecording = false;
-  els.pickRecLabel.textContent = "RECORD";
-  els.pickRecBtn.classList.remove("buzzed");
-  els.pickListening.classList.add("hidden");
+  if (submit !== false) {
+    els.pickProcessing.classList.remove("hidden");
+    els.pickListening.classList.add("hidden");
+    els.pickHint.classList.add("hidden");
+  }
   stopRecording(submit !== false);
+  render();
 }
 
 function onYouBuzzed() {
-  // Server confirms this phone has the floor — start recording now.
+  // Server confirms this phone has the floor. Auto-start recording for answer
+  // phases. Interview/pick phases use explicit tap-to-talk — don't auto-fire.
+  if (!state) return;
+  if (state.phase === "INTERVIEW" || state.phase === "PICKING") {
+    return;
+  }
   startRecording();
 }
 
@@ -818,6 +920,21 @@ els.pickRetryMicBtn.addEventListener("click", async () => {
   pickMicDenied = false;
   micPermissionDenied = false;
   els.pickMicError.classList.add("hidden");
+  await ensureStream();
+  render();
+});
+
+els.interviewRecBtn.addEventListener("click", () => {
+  if (!state || state.phase !== "INTERVIEW" || !me) return;
+  if (state.interview?.currentPlayerId !== me.id) return;
+  if (interviewRecording) stopInterviewRecording(true);
+  else startInterviewRecording();
+});
+
+els.interviewRetryMicBtn.addEventListener("click", async () => {
+  interviewMicDenied = false;
+  micPermissionDenied = false;
+  els.interviewMicError.classList.add("hidden");
   await ensureStream();
   render();
 });

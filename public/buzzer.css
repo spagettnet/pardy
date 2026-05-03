@@ -8,6 +8,20 @@
   display: none !important;
 }
 
+.pick-rec-btn {
+  width: min(80vw, 360px);
+  height: 64px;
+  font-size: 22px;
+  font-weight: 700;
+  border-radius: 999px;
+  margin-top: 18px;
+}
+
+.pick-rec-btn.recording {
+  background: var(--red);
+  color: var(--text);
+}
+
 :root {
   --bg: #0b0b3b;
   --bg-2: #14146b;

@@ -47,6 +47,7 @@
               <div class="tier-mix">
                 <button id="tier-mix-btn" class="tier-btn">Mix &amp; Match (random clues)</button>
                 <button id="tier-reroll-btn" class="tier-btn">Re-roll same tier</button>
+                <button id="custom-board-btn" class="tier-btn custom-board-btn">✨ Custom board (interview &amp; build)</button>
               </div>
             </div>
           </div>
@@ -64,6 +65,31 @@
               <div id="clue-progress"><div id="clue-progress-bar"></div></div>
               <div id="judging-pill" hidden>JUDGING…</div>
             </div>
+          </div>
+        </section>
+
+        <section id="interview-screen" class="screen" hidden>
+          <div class="big-card">
+            <div class="big-card-kicker">Custom Board — Interview</div>
+            <div id="interview-current-name" class="big-card-title"></div>
+            <div class="big-card-sub">tell us what you're good at</div>
+            <ul id="interview-roster"></ul>
+            <div class="interview-controls">
+              <button data-action="skipInterview" class="advance-btn">Skip this player</button>
+              <button data-action="cancelInterview" class="ghost-btn">Cancel</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="building-screen" class="screen" hidden>
+          <div class="big-card">
+            <div class="big-card-kicker">Building Custom Board</div>
+            <div class="big-card-title">Opus 4.7 is researching…</div>
+            <div class="big-card-sub" id="building-progress">
+              Crafting categories tuned to your players. This usually takes 30–90 seconds.
+            </div>
+            <div class="spinner-large"></div>
+            <button data-action="cancelInterview" class="ghost-btn">Cancel</button>
           </div>
         </section>
 

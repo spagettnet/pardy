@@ -15,6 +15,13 @@ export type StateEvent =
   | { type: "startGame" }
   | { type: "resetGame" } // back to LOBBY, clear scores + board, keep players
   | { type: "matchPickFailed"; playerId: string; transcript: string; reason: string }
+  | { type: "startInterview" }
+  | { type: "interviewTranscribed"; playerId: string; transcript: string }
+  | { type: "skipInterviewPlayer" }
+  | { type: "boardBuildStarted" }
+  | { type: "boardBuildCompleted" } // server hot-swaps def then dispatches this
+  | { type: "boardBuildFailed"; reason: string }
+  | { type: "cancelInterview" }
   | { type: "pickQuestion"; playerId: string; cat: number; idx: number }
   | { type: "ttsDone"; tag: TtsTag }
   | { type: "buzz"; playerId: string }
@@ -39,7 +46,9 @@ export type Effect =
   | { type: "startFinalAnswerWindow" }
   | { type: "judge"; clue: Clue; transcript: string; playerId: string }
   | { type: "judgeFinal"; clue: Clue; transcript: string; playerId: string }
-  | { type: "promptPlayerToBuzz"; playerId: string };
+  | { type: "promptPlayerToBuzz"; playerId: string }
+  | { type: "promptInterview"; playerId: string }
+  | { type: "buildBoard" };
 
 export function emptyState(): GameState {
   const grid = (): boolean[][] =>
@@ -59,6 +68,10 @@ export function emptyState(): GameState {
     finalRevealIndex: 0,
     lastJudgement: null,
     lastClueRef: null,
+    interviewQueue: [],
+    interviewIdx: 0,
+    interviewTranscripts: {},
+    interviewError: null,
   };
 }
 
@@ -109,6 +122,34 @@ function adjustScore(state: GameState, playerId: string, delta: number): void {
 export interface ApplyResult {
   state: GameState;
   effects: Effect[];
+}
+
+function advanceInterview(state: GameState, def: GameDef): ApplyResult {
+  const next = state.interviewIdx + 1;
+  state.interviewIdx = next;
+  const effects: Effect[] = [];
+  if (next >= state.interviewQueue.length) {
+    // All done — kick off the build.
+    state.phase = "BUILDING";
+    effects.push({
+      type: "speak",
+      tag: "intro",
+      text: `Building your custom board. This may take a minute…`,
+    });
+    effects.push({ type: "buildBoard" });
+    effects.push({ type: "broadcast" });
+    return { state, effects };
+  }
+  const nextPlayerId = state.interviewQueue[next]!;
+  const np = state.players.find((p) => p.id === nextPlayerId);
+  effects.push({
+    type: "speak",
+    tag: "picker",
+    text: `${np?.name ?? "Next player"}, your turn — what are you good at?`,
+  });
+  effects.push({ type: "promptInterview", playerId: nextPlayerId });
+  effects.push({ type: "broadcast" });
+  return { state, effects };
 }
 
 export function apply(
@@ -581,6 +622,71 @@ export function apply(
       state.phase = "GAME_OVER";
       break;
     }
+    case "startInterview": {
+      if (state.phase !== "LOBBY") break;
+      const connected = state.players.filter((p) => p.connected).map((p) => p.id);
+      if (connected.length === 0) break;
+      state.phase = "INTERVIEW";
+      state.interviewQueue = connected;
+      state.interviewIdx = 0;
+      state.interviewTranscripts = {};
+      state.interviewError = null;
+      const firstPlayer = findPlayer(state, connected[0]!);
+      effects.push({
+        type: "speak",
+        tag: "intro",
+        text: `Building a custom board. ${firstPlayer?.name ?? "First player"}, tell us what you're good at.`,
+      });
+      effects.push({ type: "promptInterview", playerId: connected[0]! });
+      break;
+    }
+    case "interviewTranscribed": {
+      if (state.phase !== "INTERVIEW") break;
+      const expected = state.interviewQueue[state.interviewIdx];
+      if (event.playerId !== expected) break;
+      state.interviewTranscripts[event.playerId] = event.transcript;
+      return advanceInterview(state, def);
+    }
+    case "skipInterviewPlayer": {
+      if (state.phase !== "INTERVIEW") break;
+      return advanceInterview(state, def);
+    }
+    case "boardBuildStarted": {
+      // Already set when transitioning; this is informational.
+      break;
+    }
+    case "boardBuildCompleted": {
+      if (state.phase !== "BUILDING") break;
+      // Reset to a fresh game on the new (server-swapped) def. Players keep names but scores reset.
+      const players = state.players.map((p) => ({ ...p, score: 0 }));
+      const fresh = emptyState();
+      fresh.players = players;
+      effects.push({ type: "broadcast" });
+      effects.push({
+        type: "speak",
+        tag: "intro",
+        text: `Custom board ready! Host, click Start Game when you're ready.`,
+      });
+      return { state: fresh, effects };
+    }
+    case "boardBuildFailed": {
+      if (state.phase !== "BUILDING") break;
+      state.phase = "LOBBY";
+      state.interviewError = event.reason;
+      effects.push({
+        type: "speak",
+        tag: "intro",
+        text: `Custom board build failed. Falling back to the standard board.`,
+      });
+      break;
+    }
+    case "cancelInterview": {
+      if (state.phase !== "INTERVIEW" && state.phase !== "BUILDING") break;
+      state.phase = "LOBBY";
+      state.interviewQueue = [];
+      state.interviewIdx = 0;
+      break;
+    }
     case "resetGame": {
       // Back to lobby. Keep the player list but reset scores and board state.
       const players = state.players.map((p) => ({
@@ -673,5 +779,15 @@ export function publicView(
         : null,
     lastJudgement: state.lastJudgement,
     gameTitle: def.title,
+    interview: {
+      currentPlayerId:
+        state.phase === "INTERVIEW"
+          ? state.interviewQueue[state.interviewIdx] ?? null
+          : null,
+      submitted: Object.fromEntries(
+        Object.keys(state.interviewTranscripts).map((k) => [k, true]),
+      ),
+      error: state.interviewError,
+    },
   };
 }

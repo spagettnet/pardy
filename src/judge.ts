@@ -1,10 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { client, hasLlm, modelId } from "./llm.js";
 
-const MODEL = process.env.JUDGE_MODEL || "claude-haiku-4-5-20251001";
-
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+const MODEL = modelId(process.env.JUDGE_MODEL || "claude-haiku-4-5-20251001");
 
 export interface JudgeInput {
   category: string;
@@ -36,8 +32,8 @@ Style for "riff": one short playful sentence in the spirit of a host. Tease gent
 Respond ONLY with the judgement tool call.`;
 
 export async function judgeAnswer(input: JudgeInput): Promise<JudgeResult> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    // Fallback: dumb string match so dev works without a key.
+  if (!hasLlm || !client) {
+    // Fallback: dumb string match so dev works without any LLM key.
     const norm = (s: string) =>
       s
         .toLowerCase()
@@ -50,7 +46,7 @@ export async function judgeAnswer(input: JudgeInput): Promise<JudgeResult> {
     const correct = !!a && !!b && (b.includes(a) || a.includes(b));
     return {
       correct,
-      reason: "fallback string match (no ANTHROPIC_API_KEY set)",
+      reason: "fallback string match (no ANTHROPIC_API_KEY or OPENROUTER_API_KEY set)",
       riff: null,
     };
   }
@@ -136,14 +132,31 @@ const PICK_SYSTEM = `You map a Jeopardy contestant's spoken pick (transcribed fr
 
 You will receive:
 - The phrase the player said.
-- The list of currently-available cells, each with a (cat, idx, category title, dollar value).
+- The list of currently-available cells, each with (cat, idx, category title, dollar value).
 
-Pick the cell that best matches what they said. The player typically says a category name (or fragment) plus a dollar amount, e.g. "Oscars 400", "World History for $600", "let's try potpourri 800". Be lenient on STT noise (e.g. "oscar's" vs "oscars", "for" misheard, partial titles, plural mismatches).
+The player typically says a category name (or fragment) plus a dollar amount.
+
+CRITICAL: PEOPLE USE SHORTHAND FOR DOLLAR VALUES. Always interpret numbers as the closest available cell value. Common shortcuts:
+- "16" or "sixteen" almost always means 1600 (in round 2). It does NOT mean $16.
+- "8" or "eight" almost always means 800.
+- "12" almost always means 1200.
+- "two" or "2" usually means 200.
+- "four" or "4" usually means 400.
+- "for ten" / "ten" → 1000 (or 100 only if 1000 isn't available).
+- "for the thousand" → 1000.
+- "two grand" → 2000.
+
+Rule of thumb: if the spoken number is small (1-20), it is shorthand. Map it to the nearest standard board value (200/400/600/800/1000 in round 1; 400/800/1200/1600/2000 in round 2). Multiply by 100 if needed.
+
+The player may also drop the dollar amount entirely (just say a category) — if only one cell remains in that category, pick it; otherwise pick the highest-value remaining cell in that category.
+
+Be lenient on STT noise: "oscar's" vs "oscars", partial category titles ("history" matches "World History"), plural mismatches, filler words ("uh", "let's go with"), the word "for".
 
 Strict rules:
 - Only choose from the provided available cells.
-- If no cell clearly matches, return cat=null, idx=null with a brief reason.
-- Prefer a cell where BOTH the category and the value match. If only one matches, only pick if the other is unambiguous (e.g. only one category is open at that value).
+- Prefer cells where both the category AND a sensibly-interpreted value match.
+- If the literal small number doesn't appear as a cell value but its ×100 does, USE THE ×100 INTERPRETATION. Do not refuse to map "16" just because no cell costs $16.
+- If truly nothing matches (e.g. random unrelated speech), return cat=null, idx=null with a brief reason.
 
 Respond ONLY with the matchPick tool call.`;
 
@@ -155,7 +168,7 @@ export async function matchPick(
     return { cat: null, idx: null, reason: "empty input" };
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!hasLlm || !client) {
     return naiveMatch(transcript, available);
   }
 

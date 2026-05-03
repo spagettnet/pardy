@@ -55,19 +55,51 @@
           <div id="lobbyPlayers" class="chips"></div>
         </section>
 
+        <!-- Interview (custom board build) -->
+        <section id="screen-interview" class="screen hidden">
+          <div id="interviewSelf" class="hidden">
+            <div class="big-msg">Your turn</div>
+            <div class="sub-msg">Tell us what you know best — topics, eras, hobbies, fandoms — and why. About 60 seconds.</div>
+            <div id="interviewListening" class="pulse-wrap hidden">
+              <div class="pulse"></div>
+              <div class="pulse pulse-2"></div>
+              <div class="mic-dot"></div>
+            </div>
+            <button id="interviewRecBtn" class="primary-btn pick-rec-btn">
+              <span id="interviewRecLabel">Tap to talk</span>
+            </button>
+            <div id="interviewProcessing" class="sub-msg hidden">Submitted — saving…</div>
+            <div id="interviewMicError" class="mic-error hidden">
+              <div>Microphone permission needed.</div>
+              <button id="interviewRetryMicBtn" class="ghost-btn">Retry</button>
+            </div>
+          </div>
+          <div id="interviewSpectator" class="hidden">
+            <div class="big-msg" id="interviewWaitingFor"></div>
+            <div class="sub-msg">is doing their interview…</div>
+          </div>
+        </section>
+
+        <section id="screen-building" class="screen hidden">
+          <div class="big-msg">Building your custom board…</div>
+          <div class="sub-msg">Opus 4.7 is researching. This may take a minute.</div>
+          <div class="spinner"></div>
+        </section>
+
         <!-- Picking -->
         <section id="screen-picking" class="screen hidden">
           <div id="pickingPickerView" class="hidden">
             <div class="big-msg">Your turn — pick a clue</div>
-            <div class="sub-msg">Hold the button and say something like "Oscars 400"</div>
-            <button id="pickRecBtn" class="buzz-btn pick-rec-btn" aria-label="Record pick">
-              <span class="buzz-text" id="pickRecLabel">RECORD</span>
-            </button>
+            <div class="sub-msg" id="pickHint">Tap to talk. Try: "Oscars 16" or "Potpourri 800".</div>
             <div id="pickListening" class="pulse-wrap hidden">
               <div class="pulse"></div>
               <div class="pulse pulse-2"></div>
               <div class="mic-dot"></div>
             </div>
+            <button id="pickRecBtn" class="primary-btn pick-rec-btn" aria-label="Record pick">
+              <span id="pickRecLabel">Tap to talk</span>
+            </button>
+            <div id="pickProcessing" class="sub-msg hidden">Processing…</div>
             <div id="pickMicError" class="mic-error hidden">
               <div>Microphone permission needed.</div>
               <button id="pickRetryMicBtn" class="ghost-btn">Retry</button>
