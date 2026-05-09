@@ -104,6 +104,47 @@ const els = {
 let state = null;
 let me = null;
 let ws = null;
+
+/* ---------------- Screen wake lock ---------------- */
+// Keep the phone awake while a player is in a game. The Wake Lock API
+// requires a user gesture for the initial request (we tie it to the Join
+// click) and may be auto-released when the tab goes to background — we
+// re-acquire on visibilitychange.
+
+let _wakeLock = null;
+let _wantWakeLock = false;
+
+async function requestWakeLock() {
+  if (!_wantWakeLock) return;
+  // @ts-ignore - not all TS lib versions know about wakeLock
+  if (typeof navigator === "undefined" || !navigator.wakeLock) return;
+  if (_wakeLock) return;
+  try {
+    // @ts-ignore
+    _wakeLock = await navigator.wakeLock.request("screen");
+    _wakeLock.addEventListener("release", () => {
+      _wakeLock = null;
+      // The OS released our lock (often because the tab backgrounded).
+      // If we still want it, we'll re-request on visibilitychange.
+    });
+  } catch {
+    // NotAllowedError if not visible / no gesture — try again later.
+  }
+}
+
+function releaseWakeLock() {
+  _wantWakeLock = false;
+  if (_wakeLock) {
+    _wakeLock.release().catch(() => {});
+    _wakeLock = null;
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && _wantWakeLock && !_wakeLock) {
+    requestWakeLock();
+  }
+});
 let connected = false;
 let reconnectAttempt = 0;
 let reconnectTimer = null;
@@ -231,6 +272,13 @@ function handleServer(m) {
   switch (m.type) {
     case "joined":
       saveIdentity(m.playerId, m.rejoinToken);
+      // Whether this was a fresh join (had a user gesture) or a silent
+      // auto-rejoin on reload, mark that we want the wake lock. The
+      // request fires here; if there's no gesture credit it'll fail
+      // silently and our visibilitychange listener + first buzz click
+      // will pick it up.
+      _wantWakeLock = true;
+      void requestWakeLock();
       render();
       break;
     case "state":
@@ -246,6 +294,7 @@ function handleServer(m) {
       break;
     case "kicked":
       kicked = true;
+      releaseWakeLock();
       try {
         ws && ws.close();
       } catch {}
@@ -678,6 +727,9 @@ function pressBuzz(e) {
   if (!state || state.phase !== "OPEN") return;
   if (buzzedLocally) return;
   if (state.buzzedPlayerId) return;
+  // Buzz click is a user gesture — opportunistically grab the wake
+  // lock if we don't already have it (e.g. auto-rejoined on reload).
+  if (_wantWakeLock && !_wakeLock) void requestWakeLock();
   buzzedLocally = true;
   if (navigator.vibrate) {
     try {
@@ -1057,14 +1109,24 @@ function attemptJoin() {
   render();
 }
 
-els.joinBtn.addEventListener("click", attemptJoin);
+function joinAndKeepAwake() {
+  // The Wake Lock API requires a user gesture, so request right here in
+  // the click handler before any awaits. We don't block on it — the
+  // request will resolve in the background.
+  _wantWakeLock = true;
+  void requestWakeLock();
+  attemptJoin();
+}
+
+els.joinBtn.addEventListener("click", joinAndKeepAwake);
 els.nameInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") attemptJoin();
+  if (e.key === "Enter") joinAndKeepAwake();
 });
 
 els.changeName.addEventListener("click", (e) => {
   e.preventDefault();
   if (!confirm("Clear your name and rejoin token?")) return;
+  releaseWakeLock();
   clearIdentity();
   state = null;
   me = null;
