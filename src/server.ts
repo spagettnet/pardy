@@ -383,8 +383,19 @@ async function runJudge(eff: Extract<Effect, { type: "judge" }>): Promise<void> 
       correctAnswer: eff.clue.answer,
       transcribedGuess: eff.transcript,
     });
+    const player = world.state.players.find((p) => p.id === eff.playerId);
+    const playerName = player?.name ?? eff.playerId;
+    console.log(
+      `[judge] ${playerName}: "${eff.transcript}" → ${result.correct ? "CORRECT" : "WRONG"} (cat="${cat.title}" $${eff.clue.value}${result.forgotQuestionForm ? " [forgot question form]" : ""}) reason="${result.reason}"`,
+    );
+    // Augment the riff with a question-form reminder if the player forgot.
+    let riff = result.riff;
+    if (result.correct && result.forgotQuestionForm) {
+      const reminder = "Phrase it as a question next time!";
+      riff = riff ? `${riff} ${reminder}` : reminder;
+    }
     // Stash transcript on lastJudgement after dispatch (apply doesn't see transcript).
-    dispatch({ type: "judgement", correct: result.correct, riff: result.riff });
+    dispatch({ type: "judgement", correct: result.correct, riff });
     // Patch the lastJudgement transcript directly for display.
     if (world.state.lastJudgement) {
       world.state.lastJudgement.transcript = eff.transcript;
@@ -459,8 +470,10 @@ function handlePlayerJoin(ws: WebSocket, name: string, rejoinToken?: string): vo
       connected: true,
       token,
     };
+    console.log(`[player] joined: ${player.name} (id=${playerId.slice(0, 8)})`);
     dispatch({ type: "addPlayer", player });
   } else {
+    console.log(`[player] rejoined: ${name || "?"} (id=${playerId.slice(0, 8)})`);
     dispatch({ type: "setConnected", playerId, connected: true });
   }
   // Track socket.
@@ -476,6 +489,10 @@ function handlePlayerDisconnect(ws: WebSocket): void {
     const filtered = sockets.filter((s) => s.ws !== ws);
     if (filtered.length === 0) {
       world.playerSockets.delete(pid);
+      const p = world.state.players.find((pl) => pl.id === pid);
+      console.log(
+        `[player] disconnected: ${p?.name ?? pid} (id=${pid.slice(0, 8)})`,
+      );
       dispatch({ type: "setConnected", playerId: pid, connected: false });
     } else {
       world.playerSockets.set(pid, filtered);
@@ -577,6 +594,10 @@ function onClientMessage(
     case "host:setScore":
       if (isHost) {
         const score = Math.max(-100000, Math.min(100000, Math.floor(msg.score)));
+        const p = world.state.players.find((pl) => pl.id === msg.playerId);
+        console.log(
+          `[score] host edit: ${p?.name ?? msg.playerId} ${p ? "$" + p.score : "?"} → $${score}`,
+        );
         dispatch({ type: "setScore", playerId: msg.playerId, score });
       }
       break;
@@ -602,7 +623,11 @@ function onClientMessage(
       }
       break;
     case "player:buzz":
-      if (playerId) dispatch({ type: "buzz", playerId });
+      if (playerId) {
+        const p = world.state.players.find((pl) => pl.id === playerId);
+        console.log(`[buzz] ${p?.name ?? playerId}`);
+        dispatch({ type: "buzz", playerId });
+      }
       break;
     case "player:answer":
       if (playerId) {

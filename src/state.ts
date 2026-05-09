@@ -253,11 +253,12 @@ export function apply(
         });
       } else {
         state.phase = "READING";
-        const cat = def.rounds[state.round].categories[event.cat]!;
+        // Just read the prompt. The host display already shows the category
+        // and dollar value; the announcer doesn't need to repeat them.
         effects.push({
           type: "speak",
           tag: "clue",
-          text: `${cat.title} for $${clue.value}. ${clue.prompt}`,
+          text: clue.prompt,
         });
       }
       break;
@@ -273,11 +274,11 @@ export function apply(
         state.phase = "DD_ANSWERING";
         const ref = state.currentClue!;
         const clue = getClue(def, ref);
-        const cat = def.rounds[ref.round].categories[ref.cat]!;
+        // Just read the prompt. The host display already shows the wager.
         effects.push({
           type: "speak",
           tag: "clue",
-          text: `${cat.title}, for $${amount}. ${clue.prompt}`,
+          text: clue.prompt,
         });
       } else if (state.phase === "FINAL_WAGER") {
         const p = findPlayer(state, event.playerId);
@@ -289,10 +290,12 @@ export function apply(
         const eligible = state.players.filter((pl) => pl.score > 0);
         if (eligible.every((pl) => state.finalWagers[pl.id] !== undefined)) {
           state.phase = "FINAL_READING";
+          // The display shows the Final category prominently; just read the
+          // prompt and prompt for responses.
           effects.push({
             type: "speak",
             tag: "final",
-            text: `In the category ${def.final.category}, the final clue is. ${def.final.prompt}. Players, record your responses now.`,
+            text: `${def.final.prompt}. Players, type your responses now.`,
           });
         }
       }

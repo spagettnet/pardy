@@ -14,6 +14,7 @@ export interface JudgeResult {
   correct: boolean;
   reason: string;
   riff: string | null; // playful one-liner, optional
+  forgotQuestionForm?: boolean;
 }
 
 const SYSTEM = `You are an impartial Jeopardy! judge.
@@ -23,9 +24,14 @@ Given the clue, the canonical correct response, and a player's spoken guess (tra
 Acceptance rules — match TV show practice:
 - Accept any correct response that unambiguously identifies the right answer.
 - Be lenient on phrasing, articles, capitalization, partial names, common nicknames, and minor STT misspellings (e.g. "the godfather" == "godfather", "ada lovelace" == "lovelace" if the clue clearly cues her).
-- Do NOT require "in the form of a question." Accept either form.
 - Reject if the guess names a different specific entity.
 - If the guess is empty, just filler, "I don't know", or unrelated, reject.
+
+Question-form rule:
+- Jeopardy traditionally requires answers in question form ("What is New York?", "Who is Lincoln?").
+- ACCEPT a correct answer regardless of phrasing — DO NOT mark "New York" wrong just because it isn't "What is New York?". The factual recall is what matters.
+- HOWEVER, if a correct guess wasn't in question form, set "forgotQuestionForm" to true and your riff should gently remind the player: e.g. "Correct, but phrase it as a question next time!" or "Right answer — Trebek would dock you, but I won't."
+- If they DID phrase it as a question (or it's clearly implied by the answer's structure), set "forgotQuestionForm" to false.
 
 Style for "riff": one short playful sentence in the spirit of a TV host. Tease gently on wrong; congratulate briefly on right. Keep it under 12 words. Use null if nothing clever comes to mind.
 
@@ -101,6 +107,11 @@ ${input.isFinal ? "(This is Final Jeopardy — be a touch stricter on identifica
               description:
                 "Optional short host-style remark. Null if nothing fits. Must NOT reveal the correct answer when the guess is wrong.",
             },
+            forgotQuestionForm: {
+              type: "boolean",
+              description:
+                "True if the player gave a correct answer but didn't phrase it as a question (e.g. said 'New York' instead of 'What is New York?'). Always false when correct=false.",
+            },
           },
           required: ["correct", "reason"],
         },
@@ -128,6 +139,11 @@ ${input.isFinal ? "(This is Final Jeopardy — be a touch stricter on identifica
     correct: !!args.correct,
     reason: typeof args.reason === "string" ? args.reason : "",
     riff: typeof args.riff === "string" && args.riff.trim() ? args.riff : null,
+    forgotQuestionForm:
+      typeof (args as { forgotQuestionForm?: unknown }).forgotQuestionForm ===
+      "boolean"
+        ? !!(args as { forgotQuestionForm?: boolean }).forgotQuestionForm
+        : false,
   };
 }
 

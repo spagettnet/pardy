@@ -18,6 +18,8 @@
  * to the host UI's BUILDING screen.
  */
 
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { Category, Clue, FinalJeopardy, GameDef, Round } from "./types.js";
 import {
@@ -30,6 +32,16 @@ import {
 } from "./llm.js";
 
 const BASE_MODEL = process.env.BOARD_MODEL || "claude-opus-4-7";
+
+// Stop-words we don't flag as leaks even if they appear in both prompt and
+// answer — they're noise, not identifying information. Hoisted up here
+// because the inspiration / anti-repeat search functions reference it.
+const STOPWORDS = new Set([
+  "the", "a", "an", "of", "in", "on", "to", "for", "and", "or", "but", "is",
+  "this", "that", "these", "those", "his", "her", "its", "their", "from",
+  "with", "by", "as", "at", "be", "was", "were", "are", "do", "did", "have",
+  "has", "had", "will", "what", "who", "which", "where", "when", "how",
+]);
 
 export interface PlayerProfile {
   name: string;
@@ -132,11 +144,22 @@ interface BoardPlan {
   final: { category: string; research_brief: string };
 }
 
-async function planBoard(profiles: PlayerProfile[]): Promise<BoardPlan> {
+async function planBoard(
+  profiles: PlayerProfile[],
+  priorClues: PriorClue[],
+): Promise<BoardPlan> {
   if (!client) throw new Error("no client");
+  const priorBlock = priorClues.length
+    ? `\n\nPRIOR GAMES with overlapping players already used these CATEGORIES — pick fresh angles. Don't re-use the same category titles or topics:\n${[
+        ...new Set(priorClues.map((p) => p.category)),
+      ]
+        .slice(0, 60)
+        .map((c) => `  - ${c}`)
+        .join("\n")}`
+    : "";
   const userBlock = `Players and their self-described strengths (transcribed from speech, expect some STT noise):
 
-${profiles.map((p, i) => `## Player ${i + 1}: ${p.name}\n${p.transcript || "(no transcript provided)"}`).join("\n\n")}
+${profiles.map((p, i) => `## Player ${i + 1}: ${p.name}\n${p.transcript || "(no transcript provided)"}`).join("\n\n")}${priorBlock}
 
 Plan a custom 6×5 + 6×5 + Final board for these ${profiles.length} player(s). Call plan_board with the structure.`;
 
@@ -167,9 +190,27 @@ const CATEGORY_SYSTEM = `You write 5 Jeopardy! clues for one category, given a r
 Style rules:
 - The PROMPT is what the host reads. The ANSWER is the canonical correct response (a noun, not phrased as a question — "Albert Einstein", not "Who is Albert Einstein").
 - Use web_search aggressively. Verify every name, date, score, lyric, location.
-- Difficulty escalates within the category from $200 (easy entry-level for the targeted player) up to $1000 (a stretch from their domain). Round 2 escalates from $400 to $2000 with the same shape.
 - Avoid clues that depend on visual or audio media.
 - Each prompt narrows to exactly ONE correct answer.
+
+DIFFICULTY CALIBRATION (you must rate each clue 0-100; server sorts):
+
+  0-25  | giveaway / first-grade fan / one specific famous fact
+        | e.g. for U.S. PRESIDENTS: "He was the first president of the United States." → Washington
+
+  26-50 | recall-level for someone with general knowledge of the topic
+        | e.g. "He resigned in 1974." → Nixon
+
+  51-70 | mid-range — requires a specific fact or a small inference step
+        | e.g. "This president doubled the size of the U.S. with the 1803 Louisiana Purchase." → Jefferson
+
+  71-85 | trivia-level — specific, dated, or requires connecting two facts
+        | e.g. "He's the only president to serve more than two consecutive terms." → FDR
+
+  86-100| genuine stumper — obscure, specific to a niche, or requires knowing the niche language
+        | e.g. "He was the only president to die in office while not having been elected to the presidency." → Harding
+
+Spread your 5 clues across this scale. Don't bunch them all in 50-70. The targeted player should get most of the cheap ones; the $1000/$2000 should be a real challenge even for them.
 
 CRITICAL — DO NOT TELEGRAPH THE ANSWER. This is the most common failure mode and the one I will reject the hardest.
 
@@ -185,7 +226,8 @@ Return exactly 5 clues via the write_category tool. No prose.`;
 
 const CATEGORY_TOOL = {
   name: "write_category",
-  description: "Emit the 5 clues for this category, in order from $200 to $1000 (round 1) or $400 to $2000 (round 2).",
+  description:
+    "Emit the 5 clues for this category. Order doesn't matter — the server sorts by your `difficulty` field before assigning slot values.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -198,8 +240,15 @@ const CATEGORY_TOOL = {
           properties: {
             prompt: { type: "string" as const },
             answer: { type: "string" as const },
+            difficulty: {
+              type: "integer" as const,
+              minimum: 0,
+              maximum: 100,
+              description:
+                "Your honest assessment of how hard THIS clue is on a 0-100 scale relative to the targeted player's skill in this category. 0 = absolute giveaway. 100 = stumper. Server uses this to sort the 5 clues and assign them to slot values from cheapest (lowest difficulty) to most expensive (highest difficulty).",
+            },
           },
-          required: ["prompt", "answer"],
+          required: ["prompt", "answer", "difficulty"],
         },
       },
     },
@@ -219,6 +268,183 @@ const FINAL_TOOL = {
     required: ["prompt", "answer"],
   },
 };
+
+/* ---------------- Real-Jeopardy-clue inspiration ---------------- */
+
+const EPISODES_PATH = resolve(
+  import.meta.dirname,
+  "..",
+  "data",
+  "episodes.json",
+);
+
+interface FlatClue {
+  category: string;
+  prompt: string;
+  answer: string;
+  value: number;
+}
+
+let _flatClues: FlatClue[] | null = null;
+
+function loadFlatClues(): FlatClue[] {
+  if (_flatClues) return _flatClues;
+  if (!existsSync(EPISODES_PATH)) {
+    _flatClues = [];
+    return _flatClues;
+  }
+  try {
+    const eps = JSON.parse(readFileSync(EPISODES_PATH, "utf8")) as Array<{
+      rounds: Array<{
+        categories: Array<{
+          title: string;
+          clues: Array<{
+            value: number;
+            prompt: string;
+            answer: string;
+            missing?: boolean;
+          }>;
+        }>;
+      }>;
+    }>;
+    const out: FlatClue[] = [];
+    for (const ep of eps) {
+      for (const round of ep.rounds ?? []) {
+        for (const cat of round.categories ?? []) {
+          for (const clue of cat.clues ?? []) {
+            if (clue?.missing) continue;
+            if (!clue?.prompt || !clue?.answer) continue;
+            out.push({
+              category: cat.title,
+              prompt: clue.prompt,
+              answer: clue.answer,
+              value: clue.value,
+            });
+          }
+        }
+      }
+    }
+    _flatClues = out;
+    console.log(`[board] flat clue index: ${out.length} clues loaded`);
+    return out;
+  } catch (err) {
+    console.error("[board] failed to load episodes.json:", err);
+    _flatClues = [];
+    return _flatClues;
+  }
+}
+
+/**
+ * Search the J! Archive flat index by simple keyword match against
+ * category title or prompt. Used to pull a handful of real Jeopardy
+ * clues as style/topic inspiration for the writer, so it doesn't fall
+ * back on its training-defaults the same way every game.
+ */
+function searchInspirationClues(
+  brief: CategoryBrief,
+  limit = 8,
+): FlatClue[] {
+  const all = loadFlatClues();
+  if (all.length === 0) return [];
+  const haystack = `${brief.title} ${brief.research_brief}`.toLowerCase();
+  const tokens = new Set(
+    haystack
+      .replace(/[^a-z0-9 ]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 3 && !STOPWORDS.has(w)),
+  );
+  if (tokens.size === 0) return [];
+
+  const scored: Array<{ c: FlatClue; score: number }> = [];
+  for (const c of all) {
+    let score = 0;
+    const cat = c.category.toLowerCase();
+    const prompt = c.prompt.toLowerCase();
+    for (const t of tokens) {
+      if (cat.includes(t)) score += 3;
+      if (prompt.includes(t)) score += 1;
+    }
+    if (score > 0) scored.push({ c, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  // Shuffle the top tier a bit so we don't show the SAME 8 every time
+  // (the user explicitly noted boards repeat — this is one place where
+  // some non-determinism helps).
+  const topPool = scored.slice(0, Math.min(scored.length, limit * 4));
+  for (let i = topPool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [topPool[i], topPool[j]] = [topPool[j]!, topPool[i]!];
+  }
+  return topPool.slice(0, limit).map((s) => s.c);
+}
+
+/* ---------------- Past-board anti-repetition ---------------- */
+
+const CUSTOM_BOARDS_DIR = resolve(
+  import.meta.dirname,
+  "..",
+  "data",
+  "custom-boards",
+);
+
+interface PriorClue {
+  category: string;
+  answer: string;
+  prompt: string;
+}
+
+/**
+ * Pull category + answer pairs from previously saved custom boards built
+ * for THIS player set (overlap by name, case-insensitive). The writer
+ * prompt feeds these as DO-NOT-REPEAT topics so we don't keep landing on
+ * the same Marvel / animals / classical-guitar clues every game.
+ */
+function loadPriorCluesForPlayers(currentPlayers: PlayerProfile[]): PriorClue[] {
+  if (!existsSync(CUSTOM_BOARDS_DIR)) return [];
+  const namesLower = new Set(
+    currentPlayers.map((p) => p.name.toLowerCase().trim()),
+  );
+  const out: PriorClue[] = [];
+  let files: string[];
+  try {
+    files = readdirSync(CUSTOM_BOARDS_DIR).filter((f) => f.endsWith(".json"));
+  } catch {
+    return [];
+  }
+  for (const f of files) {
+    try {
+      const raw = readFileSync(resolve(CUSTOM_BOARDS_DIR, f), "utf8");
+      const board = JSON.parse(raw) as GameDef & { players?: string[] };
+      const priorNames = (board.players ?? []).map((n) => n.toLowerCase().trim());
+      // Overlap heuristic: at least one name matches.
+      const hasOverlap = priorNames.some((n) => namesLower.has(n));
+      if (!hasOverlap) continue;
+      for (const round of board.rounds ?? []) {
+        for (const cat of round.categories ?? []) {
+          for (const clue of cat.clues ?? []) {
+            if (clue?.missing) continue;
+            if (!clue?.answer || !clue?.prompt) continue;
+            out.push({
+              category: cat.title,
+              answer: clue.answer,
+              prompt: clue.prompt,
+            });
+          }
+        }
+      }
+      if (board.final?.answer) {
+        out.push({
+          category: board.final.category,
+          answer: board.final.answer,
+          prompt: board.final.prompt,
+        });
+      }
+    } catch {
+      // skip malformed file
+    }
+  }
+  return out;
+}
 
 /* ---------------- Per-clue retry ---------------- */
 
@@ -359,7 +585,8 @@ async function writeCategory(
   brief: CategoryBrief,
   roundNum: 1 | 2,
   players: PlayerProfile[],
-): Promise<{ prompt: string; answer: string }[]> {
+  priorClues: PriorClue[] = [],
+): Promise<{ prompt: string; answer: string; difficulty?: number }[]> {
   if (!client) throw new Error("no client");
   const standardValues =
     roundNum === 1 ? [200, 400, 600, 800, 1000] : [400, 800, 1200, 1600, 2000];
@@ -368,6 +595,49 @@ async function writeCategory(
     .map((p) => `- ${p.name}: ${p.transcript.slice(0, 280)}`)
     .join("\n");
 
+  // Filter prior clues to roughly-relevant ones for this category by simple
+  // keyword overlap with the title/brief. Keeps the DO-NOT-REPEAT block
+  // focused; the model doesn't need to see all 200 prior clues, just the
+  // ones plausibly in this domain.
+  const haystack =
+    `${brief.title} ${brief.research_brief}`.toLowerCase();
+  const haystackTokens = new Set(
+    haystack.replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 3),
+  );
+  const relatedPrior = priorClues
+    .filter((pc) => {
+      const cat = pc.category.toLowerCase();
+      const ans = pc.answer.toLowerCase();
+      // Match on category overlap or shared significant tokens
+      if (cat.split(/[\s&]+/).some((t) => haystackTokens.has(t))) return true;
+      if (ans.split(/\s+/).some((t) => t.length > 3 && haystackTokens.has(t)))
+        return true;
+      return false;
+    })
+    .slice(0, 30);
+
+  const priorBlock =
+    relatedPrior.length > 0
+      ? `\n\nPRIOR GAMES (overlapping players) used these answers in similar territory — DO NOT pick any of them again, find different angles:\n${relatedPrior
+          .map((p) => `  - "${p.answer}" (from "${p.category}")`)
+          .join("\n")}`
+      : "";
+
+  // Pull a handful of real Jeopardy clues from the J! Archive that match
+  // this category's territory. NOT for copying — purely as style/topic
+  // inspiration so the model varies its choices instead of falling back
+  // on the same training-default subjects every game.
+  const inspiration = searchInspirationClues(brief, 8);
+  const inspirationBlock =
+    inspiration.length > 0
+      ? `\n\nFOR STYLE INSPIRATION ONLY — these are real J! Archive clues that touched related territory. Don't copy them. Use them as a calibration on tone, length, specificity, and what makes a real Jeopardy clue snap:\n${inspiration
+          .map(
+            (c) =>
+              `  • [${c.category}] "${c.prompt}" → ${c.answer}`,
+          )
+          .join("\n")}`
+      : "";
+
   const userBlock = `Round ${roundNum}. Category: ${brief.title}
 ${brief.targetedPlayer ? `Primarily targeting: ${brief.targetedPlayer}` : "Shared category."}
 Research brief: ${brief.research_brief}
@@ -375,9 +645,9 @@ Research brief: ${brief.research_brief}
 Standard values for this round: ${standardValues.map((v) => `$${v}`).join(", ")}
 
 Player profiles for context:
-${playerSummary}
+${playerSummary}${priorBlock}${inspirationBlock}
 
-Write exactly 5 clues for this category, ordered $${standardValues[0]} → $${standardValues[4]}. Use web_search to verify facts. Call write_category when done.`;
+Write exactly 5 clues for this category. Each must come with a difficulty score (0-100) — see the calibration table. The server sorts by your scores so order doesn't matter, but spread them across the difficulty range. Use web_search to verify facts. Call write_category when done.`;
 
   const tools: Anthropic.Messages.ToolUnion[] = supportsServerTools
     ? [
@@ -403,7 +673,9 @@ Write exactly 5 clues for this category, ordered $${standardValues[0]} → $${st
   if (!tool || tool.type !== "tool_use") {
     throw new Error(`category "${brief.title}" returned no tool call`);
   }
-  const data = tool.input as { clues: { prompt: string; answer: string }[] };
+  const data = tool.input as {
+    clues: { prompt: string; answer: string; difficulty?: number }[];
+  };
   if (!Array.isArray(data.clues) || data.clues.length !== 5) {
     throw new Error(`category "${brief.title}" did not return 5 clues`);
   }
@@ -484,7 +756,17 @@ export async function buildCustomBoard(
   /* Phase 1: planner */
   progress({ phase: "Planning the board structure", detail: "Reading interview transcripts" });
   const t0 = Date.now();
-  const plan = await planBoard(profiles);
+  const priorClues = loadPriorCluesForPlayers(profiles);
+  if (priorClues.length > 0) {
+    console.log(
+      `[board] anti-repeat: ${priorClues.length} prior clue(s) loaded from saved boards with overlapping players`,
+    );
+    progress({
+      phase: `Anti-repeat: ${priorClues.length} prior clues loaded`,
+      detail: "Avoiding subjects from past games",
+    });
+  }
+  const plan = await planBoard(profiles, priorClues);
   console.log(
     `[board] plan in ${((Date.now() - t0) / 1000).toFixed(1)}s — title="${plan.title}"`,
   );
@@ -516,25 +798,29 @@ export async function buildCustomBoard(
     });
   };
 
-  const r1Promises: Promise<{ clues: { prompt: string; answer: string }[] }>[] =
-    plan.round1.map((brief) =>
-      writeCategory(brief, 1, profiles).then((clues) => {
+  type WrittenClues = {
+    clues: { prompt: string; answer: string; difficulty?: number }[];
+  };
+  const r1Promises: Promise<WrittenClues>[] = plan.round1.map((brief) =>
+    writeCategory(brief, 1, profiles, priorClues)
+      .then((clues) => {
         tickProgress(`✓ ${brief.title}`);
-        return { clues };
-      }).catch((err) => {
+        return { clues } as WrittenClues;
+      })
+      .catch((err) => {
         console.error(`[board] R1 "${brief.title}" failed:`, err);
         tickProgress(`✗ ${brief.title}`);
-        return { clues: [] };
+        return { clues: [] } as WrittenClues;
       }),
-    );
+  );
   const r2Promises = plan.round2.map((brief) =>
-    writeCategory(brief, 2, profiles).then((clues) => {
+    writeCategory(brief, 2, profiles, priorClues).then((clues) => {
       tickProgress(`✓ ${brief.title}`);
-      return { clues };
+      return { clues } as WrittenClues;
     }).catch((err) => {
       console.error(`[board] R2 "${brief.title}" failed:`, err);
       tickProgress(`✗ ${brief.title}`);
-      return { clues: [] };
+      return { clues: [] } as WrittenClues;
     }),
   );
   const finalPromise = writeFinal(plan.final, profiles).then((f) => {
@@ -677,15 +963,6 @@ async function retryLeaks(
   await Promise.all(retryTasks);
 }
 
-// Stop-words we don't flag as leaks even if they appear in both prompt and
-// answer — they're noise, not identifying information.
-const STOPWORDS = new Set([
-  "the", "a", "an", "of", "in", "on", "to", "for", "and", "or", "but", "is",
-  "this", "that", "these", "those", "his", "her", "its", "their", "from",
-  "with", "by", "as", "at", "be", "was", "were", "are", "do", "did", "have",
-  "has", "had", "will", "what", "who", "which", "where", "when", "how",
-]);
-
 /**
  * Returns the offending answer word if the prompt leaks the answer, else null.
  * Considers any answer word longer than 3 characters that isn't a stopword.
@@ -706,11 +983,21 @@ function detectAnswerLeak(prompt: string, answer: string): string | null {
 }
 
 function assembleClues(
-  raw: { prompt: string; answer: string }[],
+  raw: { prompt: string; answer: string; difficulty?: number }[],
   roundNum: 1 | 2,
 ): Clue[] {
   const standardValues =
     roundNum === 1 ? [200, 400, 600, 800, 1000] : [400, 800, 1200, 1600, 2000];
+  // Sort by the writer's self-reported difficulty before assigning slots.
+  // Missing/invalid difficulty defaults to the original index so we don't
+  // shuffle anything that didn't get scored.
+  const indexed = raw.map((r, i) => ({
+    r,
+    i,
+    diff: typeof r?.difficulty === "number" ? r.difficulty : i * 20,
+  }));
+  indexed.sort((a, b) => a.diff - b.diff);
+  raw = indexed.map((x) => x.r);
   const out: Clue[] = [];
   for (let i = 0; i < 5; i++) {
     const r = raw[i];
