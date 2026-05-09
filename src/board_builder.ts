@@ -252,6 +252,18 @@ const RETRY_TOOL = {
   },
 };
 
+/**
+ * Compute the answer's significant words — the ones that, if they appear
+ * in the prompt, count as a leak. Same logic as detectAnswerLeak.
+ */
+function answerWordsToForbid(answer: string): string[] {
+  return answer
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !STOPWORDS.has(w));
+}
+
 async function retryClue(
   brief: CategoryBrief,
   roundNum: 1 | 2,
@@ -263,9 +275,14 @@ async function retryClue(
     bad?: boolean;
   }>,
   reason: string,
+  /** Previously-tried prompts that still leaked, with the leak word. Helps the model not repeat its own mistakes. */
+  priorAttempts: Array<{ prompt: string; answer: string; leakedWord: string }> = [],
 ): Promise<{ prompt: string; answer: string } | null> {
   if (!client) return null;
   const valueAtPosition = surviving[position]!.value;
+  const targetAnswer = surviving[position]!.answer;
+  const forbidden = answerWordsToForbid(targetAnswer);
+
   const lines = surviving
     .map((c, i) => {
       const tag = i === position ? " ← REPLACE THIS" : c.bad ? " [BAD — being replaced separately]" : "";
@@ -273,15 +290,38 @@ async function retryClue(
       return `  $${c.value}${tag}: ${body}`;
     })
     .join("\n");
+
+  const priorBlock = priorAttempts.length
+    ? `\n\nPRIOR FAILED ATTEMPTS (do not repeat these — they all leaked):\n${priorAttempts
+        .map(
+          (p, n) =>
+            `  Attempt ${n + 1}: "${p.prompt}"\n    → leaked word: "${p.leakedWord}"`,
+        )
+        .join("\n")}`
+    : "";
+
   const userBlock = `Category: ${brief.title}
 Research brief: ${brief.research_brief}
+Slot to repair: $${valueAtPosition}
+Target answer: "${targetAnswer}"
 
-The 5 clues (cheapest → most expensive):
+FORBIDDEN WORDS in your prompt — your prompt MUST NOT contain ANY of these (or close variants like plurals/possessives):
+  ${forbidden.length === 0 ? "(no significant answer words to avoid — the answer is short)" : forbidden.map((w) => `"${w}"`).join(", ")}
+
+The 5 clues in this category (cheapest → most expensive):
 ${lines}
 
-The clue at $${valueAtPosition} was rejected because: ${reason}.
+The clue at $${valueAtPosition} was rejected because: ${reason}.${priorBlock}
 
-Write a replacement clue for the $${valueAtPosition} slot. Don't repeat any of the surviving clues' topics. Use web_search if you need to verify facts. Call rewrite_clue.`;
+Write a replacement clue for the $${valueAtPosition} slot.
+
+Constraints (recap):
+- The clue's prompt CANNOT contain any of the forbidden words above. Sanity-check by re-reading your draft and looking for each forbidden word.
+- Don't repeat the topic, person, work, place, year, or fact of any surviving clue in the category.
+- Difficulty fits the slot: $${valueAtPosition} is ${valueAtPosition <= 400 ? "the easy end — accessible recall" : valueAtPosition >= 1600 ? "the hard end — a real stumper" : "mid-range — moderate difficulty"} for a player into this category.
+- Keep the answer "${targetAnswer}" itself OR pick a different angle that lands on a closely-related fact. (If sticking with "${targetAnswer}" keeps leaking, switch to a different fact about the same subject.)
+
+Call rewrite_clue when done.`;
 
   const tools: Anthropic.Messages.ToolUnion[] = supportsServerTools
     ? [
@@ -577,33 +617,56 @@ async function retryLeaks(
       if (!snapshot[i]!.bad) continue;
       scheduled += 1;
       const reason = snapshot[i]!.reason;
+      const slotValue = snapshot[i]!.value;
       const task = (async () => {
         console.warn(
-          `[board] R${roundNum} "${brief.title}" $${snapshot[i]!.value}: leak detected (${reason}) → retrying…`,
+          `[board] R${roundNum} "${brief.title}" $${slotValue}: leak detected (${reason}) → retrying…`,
         );
-        const replacement = await retryClue(brief, roundNum, i, snapshot, reason);
-        if (!replacement) {
-          console.warn(
-            `[board] R${roundNum} "${brief.title}" $${snapshot[i]!.value}: retry returned nothing — slot will be dropped`,
+        const priorAttempts: Array<{
+          prompt: string;
+          answer: string;
+          leakedWord: string;
+        }> = [];
+        const MAX_ATTEMPTS = 3;
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+          const replacement = await retryClue(
+            brief,
+            roundNum,
+            i,
+            snapshot,
+            reason,
+            priorAttempts,
           );
-          return;
-        }
-        const stillLeaky = detectAnswerLeak(replacement.prompt, replacement.answer);
-        if (stillLeaky) {
+          if (!replacement) {
+            console.warn(
+              `[board] R${roundNum} "${brief.title}" $${slotValue}: attempt ${attempt} returned nothing`,
+            );
+            continue;
+          }
+          const leaked = detectAnswerLeak(replacement.prompt, replacement.answer);
+          if (!leaked) {
+            results[ci]!.clues[i] = replacement;
+            console.log(
+              `[board] R${roundNum} "${brief.title}" $${slotValue}: attempt ${attempt} succeeded`,
+            );
+            progress({
+              phase: "Repairing clue",
+              detail: `↻ ${brief.title} $${slotValue}`,
+            });
+            return;
+          }
           console.warn(
-            `[board] R${roundNum} "${brief.title}" $${snapshot[i]!.value}: retry STILL leaks "${stillLeaky}" — slot will be dropped`,
+            `[board] R${roundNum} "${brief.title}" $${slotValue}: attempt ${attempt} STILL leaks "${leaked}" (prompt: "${replacement.prompt.slice(0, 90)}…")`,
           );
-          return;
+          priorAttempts.push({
+            prompt: replacement.prompt,
+            answer: replacement.answer,
+            leakedWord: leaked,
+          });
         }
-        // Patch the result in place.
-        results[ci]!.clues[i] = replacement;
-        console.log(
-          `[board] R${roundNum} "${brief.title}" $${snapshot[i]!.value}: retry succeeded`,
+        console.warn(
+          `[board] R${roundNum} "${brief.title}" $${slotValue}: gave up after ${MAX_ATTEMPTS} attempts — slot will be dropped`,
         );
-        progress({
-          phase: "Repairing clue",
-          detail: `↻ ${brief.title} $${snapshot[i]!.value}`,
-        });
       })();
       retryTasks.push(task);
     }
