@@ -15,6 +15,7 @@ export type StateEvent =
   | { type: "startGame" }
   | { type: "resetGame" } // back to LOBBY, clear scores + board, keep players
   | { type: "setScore"; playerId: string; score: number }
+  | { type: "skipToFinal" }
   | { type: "matchPickFailed"; playerId: string; transcript: string; reason: string }
   | { type: "startInterview" }
   | { type: "interviewTranscribed"; playerId: string; transcript: string }
@@ -40,7 +41,7 @@ export type StateEvent =
   | { type: "endGame" };
 
 export type Effect =
-  | { type: "speak"; tag: TtsTag; text: string }
+  | { type: "speak"; tag: TtsTag; text: string; delayBeforeMs?: number }
   | { type: "broadcast" } // always emitted; server uses to push public state
   | { type: "openBuzzWindow" }
   | { type: "startAnswerWindow"; playerId: string }
@@ -49,7 +50,13 @@ export type Effect =
   | { type: "judgeFinal"; clue: Clue; transcript: string; playerId: string }
   | { type: "promptPlayerToBuzz"; playerId: string }
   | { type: "promptInterview"; playerId: string }
-  | { type: "buildBoard" };
+  | { type: "buildBoard" }
+  | {
+      type: "gameOverBanter";
+      players: Array<{ name: string; score: number }>;
+      finalCategory: string;
+      finalAnswer: string;
+    };
 
 export function emptyState(): GameState {
   const grid = (): boolean[][] =>
@@ -113,6 +120,10 @@ export function maxFinalWager(player: Player): number {
 
 function findPlayer(state: GameState, id: string): Player | undefined {
   return state.players.find((p) => p.id === id);
+}
+
+function formatMoney(n: number): string {
+  return n < 0 ? `negative $${Math.abs(n)}` : `$${n}`;
 }
 
 function adjustScore(state: GameState, playerId: string, delta: number): void {
@@ -597,25 +608,44 @@ export function apply(
         const delta = rec.correct ? +rec.wager : -rec.wager;
         adjustScore(state, rec.playerId, delta);
         const player = findPlayer(state, rec.playerId)!;
+        const guess = rec.transcript && rec.transcript.trim()
+          ? rec.transcript.trim()
+          : null;
+        const guessLine = guess
+          ? `${player.name} wrote down: ${guess}`
+          : `${player.name} did not give an answer`;
+        // Beat 1: announce the guess. Suspense.
         effects.push({
           type: "speak",
           tag: "judgement",
-          text: rec.correct
-            ? `${player.name} said: ${rec.transcript ?? "no answer"}. Correct! ${delta >= 0 ? "Plus" : "Minus"} $${Math.abs(delta)}.`
-            : `${player.name} said: ${rec.transcript ?? "no answer"}. Incorrect. The correct answer was ${def.final.answer}. Minus $${Math.abs(delta)}.`,
+          text: `${guessLine}.`,
+        });
+        // Beat 2 (after a 2-second suspense pause): wager + verdict + score.
+        const newScoreLabel = formatMoney(player.score);
+        const verdictLine = rec.correct
+          ? `Correct! Wagered ${formatMoney(rec.wager)}, now sitting at ${newScoreLabel}.`
+          : guess
+            ? `Sorry — incorrect. The correct answer was ${def.final.answer}. They wagered ${formatMoney(rec.wager)}. Now at ${newScoreLabel}.`
+            : `No answer given. Wagered ${formatMoney(rec.wager)}. Now at ${newScoreLabel}.`;
+        effects.push({
+          type: "speak",
+          tag: "judgement",
+          text: verdictLine,
+          delayBeforeMs: 2000,
         });
       }
       state.finalRevealIndex += 1;
       if (state.finalRevealIndex >= state.finalAnswers.length) {
         state.phase = "GAME_OVER";
-        const winner = [...state.players].sort((a, b) => b.score - a.score)[0];
-        if (winner) {
-          effects.push({
-            type: "speak",
-            tag: "gameOver",
-            text: `That's the game! Your winner is ${winner.name} with $${winner.score}.`,
-          });
-        }
+        // Hand off to the server to ask Haiku for a one-line wrap-up that
+        // acknowledges how the game actually ended (close finish, blowout,
+        // saved by Final, etc.). Server enqueues the resulting line.
+        effects.push({
+          type: "gameOverBanter",
+          players: state.players.map((p) => ({ name: p.name, score: p.score })),
+          finalCategory: def.final.category,
+          finalAnswer: def.final.answer,
+        });
       }
       break;
     }
@@ -691,6 +721,43 @@ export function apply(
     case "setScore": {
       const p = findPlayer(state, event.playerId);
       if (p) p.score = event.score;
+      break;
+    }
+    case "skipToFinal": {
+      // Debug: jump straight to Final Jeopardy. Marks every cell taken in
+      // both rounds and transitions to FINAL_WAGER. Useful for testing the
+      // Final flow without playing through 60 clues.
+      if (
+        state.phase === "GAME_OVER" ||
+        state.phase === "FINAL_WAGER" ||
+        state.phase === "FINAL_READING" ||
+        state.phase === "FINAL_ANSWERING" ||
+        state.phase === "FINAL_REVEAL" ||
+        state.phase === "LOBBY"
+      ) {
+        break;
+      }
+      for (let r = 0; r < 2; r++) {
+        for (let c = 0; c < 6; c++) {
+          for (let i = 0; i < 5; i++) {
+            state.taken[r as 0 | 1][c]![i] = true;
+          }
+        }
+      }
+      state.round = 1;
+      state.phase = "FINAL_WAGER";
+      state.currentClue = null;
+      state.buzzedPlayerId = null;
+      state.attemptedPlayerIds = [];
+      state.ddWager = null;
+      state.finalWagers = {};
+      state.finalAnswers = [];
+      state.finalRevealIndex = 0;
+      effects.push({
+        type: "speak",
+        tag: "final",
+        text: `Jumping to Final Jeopardy. The category is ${def.final.category}. Players with positive scores, place your wagers.`,
+      });
       break;
     }
     case "resetGame": {

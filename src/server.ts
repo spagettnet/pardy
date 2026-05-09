@@ -35,7 +35,12 @@ import type {
   ServerMessage,
   TtsTag,
 } from "./types.js";
-import { judgeAnswer, matchPick, type BoardCell } from "./judge.js";
+import {
+  judgeAnswer,
+  matchPick,
+  generateGameOverBanter,
+  type BoardCell,
+} from "./judge.js";
 import { buildCustomBoard, type PlayerProfile } from "./board_builder.js";
 import {
   synthesizeSpeech,
@@ -161,7 +166,10 @@ function runEffect(eff: Effect): void {
       broadcastState();
       break;
     case "speak":
-      void speakAndAnnounce(eff.tag, eff.text);
+      enqueueSpeak(eff.tag, eff.text, eff.delayBeforeMs);
+      break;
+    case "gameOverBanter":
+      void runGameOverBanter(eff);
       break;
     case "openBuzzWindow":
       // 10s window; if no one buzzes, mark passed.
@@ -296,22 +304,79 @@ async function persistCustomBoard(
   invalidateEpisodeCache();
 }
 
-async function speakAndAnnounce(tag: TtsTag, text: string): Promise<void> {
+// Speak queue. Multiple speak effects from one apply() can't all play at
+// once — the host's <audio> element only handles one source at a time. We
+// serialize them server-side: enqueue each, only synthesize+send the next
+// once host reports ttsDone for the previous. delayBeforeMs lets the state
+// machine inject dramatic pauses between beats.
+interface SpeakItem {
+  tag: TtsTag;
+  text: string;
+  delayBeforeMs?: number;
+}
+const speakQueue: SpeakItem[] = [];
+let currentlySpeaking = false;
+
+async function tryDequeueSpeak(): Promise<void> {
+  if (currentlySpeaking) return;
+  const next = speakQueue.shift();
+  if (!next) return;
+  currentlySpeaking = true;
+  if (next.delayBeforeMs && next.delayBeforeMs > 0) {
+    await new Promise((r) => setTimeout(r, next.delayBeforeMs));
+  }
   try {
-    const buf = await synthesizeSpeech(text);
+    const buf = await synthesizeSpeech(next.text);
     const id = randomUUID();
     world.audioStore.set(id, { buf, mime: "audio/wav" });
-    // Free old entries to avoid leaking.
     if (world.audioStore.size > 64) {
       const oldest = world.audioStore.keys().next().value;
       if (oldest) world.audioStore.delete(oldest);
     }
-    const url = `/audio/${id}.wav`;
-    sendToHosts({ type: "tts", url, tag });
+    sendToHosts({ type: "tts", url: `/audio/${id}.wav`, tag: next.tag });
   } catch (err) {
     console.error(`[tts] failed:`, err);
-    // Still send a marker so the host can simulate "ttsDone" via timer.
-    sendToHosts({ type: "tts", url: "", tag });
+    // Send empty url so the host triggers ttsDone immediately.
+    sendToHosts({ type: "tts", url: "", tag: next.tag });
+  }
+}
+
+function enqueueSpeak(
+  tag: TtsTag,
+  text: string,
+  delayBeforeMs?: number,
+): void {
+  speakQueue.push({ tag, text, delayBeforeMs });
+  void tryDequeueSpeak();
+}
+
+function onTtsDone(): void {
+  currentlySpeaking = false;
+  void tryDequeueSpeak();
+}
+
+async function runGameOverBanter(
+  eff: Extract<Effect, { type: "gameOverBanter" }>,
+): Promise<void> {
+  try {
+    const line = await generateGameOverBanter({
+      players: eff.players,
+      finalCategory: eff.finalCategory,
+      finalAnswer: eff.finalAnswer,
+    });
+    console.log(`[banter] ${line}`);
+    enqueueSpeak("gameOver", line, 1500);
+  } catch (err) {
+    console.error("[banter] failed:", err);
+    const sorted = [...eff.players].sort((a, b) => b.score - a.score);
+    const winner = sorted[0];
+    enqueueSpeak(
+      "gameOver",
+      winner
+        ? `That's the game — ${winner.name} wins with $${winner.score}.`
+        : "That's the game.",
+      1500,
+    );
   }
 }
 
@@ -438,6 +503,7 @@ function onClientMessage(
   }
   if (msg.type === "host:ttsDone") {
     if (!isHost) return;
+    onTtsDone();
     dispatch({ type: "ttsDone", tag: msg.tag });
     return;
   }
@@ -521,6 +587,12 @@ function onClientMessage(
       if (isHost) {
         const score = Math.max(-100000, Math.min(100000, Math.floor(msg.score)));
         dispatch({ type: "setScore", playerId: msg.playerId, score });
+      }
+      break;
+    case "host:skipToFinal":
+      if (isHost) {
+        clearTimers();
+        dispatch({ type: "skipToFinal" });
       }
       break;
     case "host:kickPlayer":

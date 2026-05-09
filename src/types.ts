@@ -187,6 +187,7 @@ export type ClientMessage =
   | { type: "host:skipInterviewPlayer" }
   | { type: "host:cancelInterview" }
   | { type: "host:setScore"; playerId: string; score: number }
+  | { type: "host:skipToFinal" }
   | { type: "player:join"; name: string; rejoinToken?: string }
   | { type: "player:buzz" }
   | { type: "player:answer"; audioBase64: string; mimeType: string }

@@ -133,6 +133,96 @@ ${input.isFinal ? "(This is Final Jeopardy — be a touch stricter on identifica
 
 // === matchPick: map a spoken phrase like "Oscars 400" to a board cell ===
 
+// === generateGameOverBanter: one-sentence host wrap-up at GAME_OVER ===
+
+export interface GameOverContext {
+  players: Array<{ name: string; score: number }>;
+  finalCategory: string;
+  finalAnswer: string;
+}
+
+const GAME_OVER_SYSTEM = `You are a Jeopardy!-style host wrapping up a game in ONE sentence.
+
+Given the final scores and what happened in Final Jeopardy, deliver a single playful, broadcast-ready line that names the winner and acknowledges how the game actually ended. Examples of the *vibe*:
+
+- "And what a finish — saved by Final Jeopardy, Nat takes it with $4,800!"
+- "It's a runaway: Bob clears the table at $12,200 — see you tomorrow."
+- "A two-hundred-dollar swing decides it — Carla edges out Alice for the win."
+- "Alice held on through Final Jeopardy and walks away the champion."
+
+Rules:
+- Strictly ONE sentence.
+- ≤ 22 words.
+- Mention the winner by name and their final score.
+- If it was close (winning margin < $1500), call it close.
+- If it was a runaway (margin > $5000), call it a runaway.
+- If everyone got Final wrong but the leader held on, mention that.
+- If the leader changed because of Final, call it a comeback.
+- Don't reveal the Final answer if anyone got it right (it's broadcast — they'd already know).
+- Don't be saccharine or use the word "thrilling".
+
+Return via the wrap_up tool.`;
+
+export async function generateGameOverBanter(
+  ctx: GameOverContext,
+): Promise<string> {
+  if (!hasLlm || !client) {
+    // Fallback: simple winner announcement
+    const sorted = [...ctx.players].sort((a, b) => b.score - a.score);
+    const winner = sorted[0];
+    return winner
+      ? `That's the game — ${winner.name} wins with $${winner.score}.`
+      : "That's the game.";
+  }
+  const sorted = [...ctx.players].sort((a, b) => b.score - a.score);
+  const userBlock = `Final scores (descending):
+${sorted.map((p) => `- ${p.name}: $${p.score}`).join("\n")}
+
+Final Jeopardy category: ${ctx.finalCategory}
+Final Jeopardy correct answer: ${ctx.finalAnswer}
+
+Wrap up the game in one sentence.`;
+
+  try {
+    const resp = await client.messages.create({
+      model: MODEL,
+      max_tokens: 200,
+      system: GAME_OVER_SYSTEM,
+      tool_choice: { type: "tool", name: "wrap_up" },
+      tools: [
+        {
+          name: "wrap_up",
+          description: "Return the one-sentence wrap-up.",
+          input_schema: {
+            type: "object",
+            properties: {
+              line: { type: "string" },
+            },
+            required: ["line"],
+          },
+        },
+      ],
+      messages: [{ role: "user", content: userBlock }],
+    });
+    const tool = resp.content.find(
+      (c) => c.type === "tool_use" && c.name === "wrap_up",
+    );
+    if (tool && tool.type === "tool_use") {
+      const args = tool.input as { line?: unknown };
+      if (typeof args.line === "string" && args.line.trim()) {
+        return args.line.trim();
+      }
+    }
+  } catch (err) {
+    console.error("[banter] failed:", err);
+  }
+  // Same fallback as no-key path.
+  const winner = sorted[0];
+  return winner
+    ? `That's the game — ${winner.name} wins with $${winner.score}.`
+    : "That's the game.";
+}
+
 export interface BoardCell {
   cat: number; // 0..5
   idx: number; // 0..4

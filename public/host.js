@@ -834,6 +834,12 @@ $("new-game-btn").addEventListener("click", () => {
   }
 });
 
+$("skip-to-final-btn").addEventListener("click", () => {
+  if (confirm("Skip to Final Jeopardy? Board is marked complete.")) {
+    send({ type: "host:skipToFinal" });
+  }
+});
+
 document.addEventListener("click", (e) => {
   const target = e.target;
   if (!(target instanceof HTMLElement)) return;
