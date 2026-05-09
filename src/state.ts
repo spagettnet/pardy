@@ -218,6 +218,7 @@ export function apply(
         idx: event.idx,
       };
       const clue = getClue(def, ref);
+      if (clue.missing) break; // cannot pick a clue we couldn't generate
       state.currentClue = ref;
       state.attemptedPlayerIds = [];
       state.lastJudgement = null;
@@ -793,7 +794,9 @@ export function publicView(
       title: c.title,
       cells: c.clues.map((clue, idx) => ({
         value: clue.value,
-        taken: state.taken[r][ci]?.[idx] ?? false,
+        // Treat missing cells as taken in the public view so the host UI
+        // greys them out and won't fire pickQuestion on click.
+        taken: (state.taken[r][ci]?.[idx] ?? false) || !!clue.missing,
         missing: clue.missing,
       })),
     })),

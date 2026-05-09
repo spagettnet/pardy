@@ -220,6 +220,101 @@ const FINAL_TOOL = {
   },
 };
 
+/* ---------------- Per-clue retry ---------------- */
+
+const RETRY_SYSTEM = `You are repairing one bad clue in an existing Jeopardy! category.
+
+You will receive:
+- The category title and research brief
+- The 5 surviving clues in order from cheapest to most expensive (some may be marked [BAD] — those are the ones to replace)
+- The dollar value of the slot you are writing
+
+Write a SINGLE replacement clue that:
+1. Is FACTUALLY ACCURATE — verify with web_search.
+2. Has EXACTLY ONE correct answer.
+3. Does NOT telegraph the answer. The answer's name (or any answer word > 3 chars, excluding stopwords) MUST NOT appear in the prompt. No near-tautologies.
+4. Does NOT repeat any topic, person, work, place, year, or specific fact already used in another clue in this category. Read all the surviving clues first; pick a different angle.
+5. Has appropriate difficulty for its slot. Clues at lower dollar values should be easier; clues at higher values should be harder. Look at the surviving easier and harder clues for calibration.
+6. The answer is a noun (not phrased as a question).
+
+Return via the rewrite_clue tool. No prose.`;
+
+const RETRY_TOOL = {
+  name: "rewrite_clue",
+  description: "Return the replacement clue for the requested slot.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      prompt: { type: "string" as const },
+      answer: { type: "string" as const },
+    },
+    required: ["prompt", "answer"],
+  },
+};
+
+async function retryClue(
+  brief: CategoryBrief,
+  roundNum: 1 | 2,
+  position: number,
+  surviving: Array<{
+    prompt: string;
+    answer: string;
+    value: number;
+    bad?: boolean;
+  }>,
+  reason: string,
+): Promise<{ prompt: string; answer: string } | null> {
+  if (!client) return null;
+  const valueAtPosition = surviving[position]!.value;
+  const lines = surviving
+    .map((c, i) => {
+      const tag = i === position ? " ← REPLACE THIS" : c.bad ? " [BAD — being replaced separately]" : "";
+      const body = c.bad ? "—" : `${c.prompt}\n     Answer: ${c.answer}`;
+      return `  $${c.value}${tag}: ${body}`;
+    })
+    .join("\n");
+  const userBlock = `Category: ${brief.title}
+Research brief: ${brief.research_brief}
+
+The 5 clues (cheapest → most expensive):
+${lines}
+
+The clue at $${valueAtPosition} was rejected because: ${reason}.
+
+Write a replacement clue for the $${valueAtPosition} slot. Don't repeat any of the surviving clues' topics. Use web_search if you need to verify facts. Call rewrite_clue.`;
+
+  const tools: Anthropic.Messages.ToolUnion[] = supportsServerTools
+    ? [
+        { type: "web_search_20260209", name: "web_search" } as unknown as Anthropic.Messages.ToolUnion,
+        RETRY_TOOL,
+      ]
+    : [RETRY_TOOL];
+
+  try {
+    const resp = await client.messages.create({
+      model: modelWithWebSearch(BASE_MODEL),
+      max_tokens: 4000,
+      thinking: { type: "adaptive" },
+      output_config: { effort: "high" },
+      system: RETRY_SYSTEM,
+      tools,
+      tool_choice: { type: "tool", name: "rewrite_clue" },
+      messages: [{ role: "user", content: userBlock }],
+    });
+    const tool = resp.content.find(
+      (b) => b.type === "tool_use" && b.name === "rewrite_clue",
+    );
+    if (!tool || tool.type !== "tool_use") return null;
+    const data = tool.input as { prompt?: unknown; answer?: unknown };
+    if (typeof data.prompt !== "string" || typeof data.answer !== "string")
+      return null;
+    return { prompt: data.prompt.trim(), answer: data.answer.trim() };
+  } catch (err) {
+    console.error(`[retry] "${brief.title}" $${valueAtPosition} failed:`, err);
+    return null;
+  }
+}
+
 async function writeCategory(
   brief: CategoryBrief,
   roundNum: 1 | 2,
@@ -413,6 +508,10 @@ export async function buildCustomBoard(
     finalPromise,
   ]);
 
+  /* Phase 2.5: validate + retry any leaky clues */
+  await retryLeaks(plan.round1, r1Results, 1, progress);
+  await retryLeaks(plan.round2, r2Results, 2, progress);
+
   /* Phase 3: assemble */
   progress({ phase: "Assembling the board", detail: plan.title });
 
@@ -438,6 +537,81 @@ export async function buildCustomBoard(
   };
 
   return { title: plan.title.trim(), rounds: [r1, r2], final: fj };
+}
+
+/**
+ * For each category in a round, scan the generated clues for answer leaks
+ * (the answer's name appearing in the prompt). For any leaky clue, fire a
+ * retryClue call in parallel that has the surviving clues as context. Up
+ * to 1 retry per clue; if the retry still leaks, leave it leaky and
+ * assembleClues will drop it to a placeholder. We log loudly so it's
+ * visible in dev.
+ */
+async function retryLeaks(
+  briefs: CategoryBrief[],
+  results: Array<{ clues: { prompt: string; answer: string }[] }>,
+  roundNum: 1 | 2,
+  progress: (p: BoardProgress) => void,
+): Promise<void> {
+  const standardValues =
+    roundNum === 1 ? [200, 400, 600, 800, 1000] : [400, 800, 1200, 1600, 2000];
+  const retryTasks: Array<Promise<void>> = [];
+  let scheduled = 0;
+
+  for (let ci = 0; ci < briefs.length; ci++) {
+    const brief = briefs[ci]!;
+    const clues = results[ci]?.clues ?? [];
+    // Build a "surviving" snapshot; any leaky clue is marked bad.
+    const snapshot = clues.map((c, i) => {
+      const leaked = detectAnswerLeak(c.prompt, c.answer);
+      return {
+        prompt: c.prompt,
+        answer: c.answer,
+        value: standardValues[i]!,
+        bad: !!leaked,
+        reason: leaked ? `answer word "${leaked}" leaked into prompt` : "",
+      };
+    });
+
+    for (let i = 0; i < snapshot.length; i++) {
+      if (!snapshot[i]!.bad) continue;
+      scheduled += 1;
+      const reason = snapshot[i]!.reason;
+      const task = (async () => {
+        console.warn(
+          `[board] R${roundNum} "${brief.title}" $${snapshot[i]!.value}: leak detected (${reason}) → retrying…`,
+        );
+        const replacement = await retryClue(brief, roundNum, i, snapshot, reason);
+        if (!replacement) {
+          console.warn(
+            `[board] R${roundNum} "${brief.title}" $${snapshot[i]!.value}: retry returned nothing — slot will be dropped`,
+          );
+          return;
+        }
+        const stillLeaky = detectAnswerLeak(replacement.prompt, replacement.answer);
+        if (stillLeaky) {
+          console.warn(
+            `[board] R${roundNum} "${brief.title}" $${snapshot[i]!.value}: retry STILL leaks "${stillLeaky}" — slot will be dropped`,
+          );
+          return;
+        }
+        // Patch the result in place.
+        results[ci]!.clues[i] = replacement;
+        console.log(
+          `[board] R${roundNum} "${brief.title}" $${snapshot[i]!.value}: retry succeeded`,
+        );
+        progress({
+          phase: "Repairing clue",
+          detail: `↻ ${brief.title} $${snapshot[i]!.value}`,
+        });
+      })();
+      retryTasks.push(task);
+    }
+  }
+
+  if (scheduled === 0) return;
+  progress({ phase: `Repairing ${scheduled} leaky clue${scheduled > 1 ? "s" : ""}` });
+  await Promise.all(retryTasks);
 }
 
 // Stop-words we don't flag as leaks even if they appear in both prompt and
