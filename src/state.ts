@@ -58,6 +58,24 @@ export type Effect =
       finalAnswer: string;
     };
 
+/**
+ * Pre-mark any cells that the def itself flags as missing (placeholder
+ * clues from a custom-board build that couldn't be generated cleanly).
+ * Without this they look "untaken" to allCluesTaken and the round never
+ * completes, even though they're not pickable.
+ */
+export function markMissingCellsTaken(state: GameState, def: GameDef): void {
+  for (let r = 0; r < 2; r++) {
+    const round = def.rounds[r as 0 | 1];
+    for (let c = 0; c < round.categories.length; c++) {
+      const cat = round.categories[c]!;
+      for (let i = 0; i < cat.clues.length; i++) {
+        if (cat.clues[i]?.missing) state.taken[r as 0 | 1][c]![i] = true;
+      }
+    }
+  }
+}
+
 export function emptyState(): GameState {
   const grid = (): boolean[][] =>
     Array.from({ length: 6 }, () => Array.from({ length: 5 }, () => false));
@@ -693,6 +711,7 @@ export function apply(
       const players = state.players.map((p) => ({ ...p, score: 0 }));
       const fresh = emptyState();
       fresh.players = players;
+      markMissingCellsTaken(fresh, def);
       effects.push({ type: "broadcast" });
       effects.push({
         type: "speak",
@@ -769,6 +788,7 @@ export function apply(
       }));
       const fresh = emptyState();
       fresh.players = players;
+      markMissingCellsTaken(fresh, def);
       return { state: fresh, effects: [{ type: "broadcast" }] };
     }
     case "matchPickFailed": {

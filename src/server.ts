@@ -13,6 +13,7 @@ import qrcode from "qrcode";
 import {
   apply,
   emptyState,
+  markMissingCellsTaken,
   publicView,
   type Effect,
   type StateEvent,
@@ -74,17 +75,7 @@ interface World {
 
 function freshStateFor(def: GameDef) {
   const s = emptyState();
-  // Auto-mark any "missing" cells (clues that were skipped on the original
-  // air) as already taken, so they show greyed-out from the start.
-  for (let r = 0; r < 2; r++) {
-    const round = def.rounds[r as 0 | 1];
-    for (let c = 0; c < round.categories.length; c++) {
-      const cat = round.categories[c]!;
-      for (let i = 0; i < cat.clues.length; i++) {
-        if (cat.clues[i]?.missing) s.taken[r as 0 | 1][c]![i] = true;
-      }
-    }
-  }
+  markMissingCellsTaken(s, def);
   return s;
 }
 
